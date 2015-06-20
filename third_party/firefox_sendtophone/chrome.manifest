@@ -1,0 +1,32 @@
+content   sendtophone                 chrome/content/
+skin      sendtophone   classic/1.0   chrome/skin/
+resource   sendtophone                 modules/
+
+locale	sendtophone	ca		chrome/locale/ca/
+locale	sendtophone	cs		chrome/locale/cs/
+locale	sendtophone	de		chrome/locale/de/
+locale	sendtophone	en-US		chrome/locale/en-US/
+locale	sendtophone	es		chrome/locale/es/
+locale	sendtophone	fr		chrome/locale/fr/
+locale	sendtophone	ga-IE		chrome/locale/ga-IE/
+locale	sendtophone	hi-IN		chrome/locale/hi-IN/
+locale	sendtophone	hu		chrome/locale/hu/
+locale	sendtophone	it		chrome/locale/it/
+locale	sendtophone	ja-JP		chrome/locale/ja-JP/
+locale	sendtophone	nl		chrome/locale/nl/
+locale	sendtophone	pl		chrome/locale/pl/
+locale	sendtophone	pt-BR		chrome/locale/pt-BR/
+locale	sendtophone	ru		chrome/locale/ru/
+locale	sendtophone	sr		chrome/locale/sr/
+locale	sendtophone	sv		chrome/locale/sv/
+locale	sendtophone	tr		chrome/locale/tr/
+locale	sendtophone	zh-CN		chrome/locale/zh-CN/
+locale	sendtophone	zh-TW		chrome/locale/zh-TW/
+
+overlay   chrome://browser/content/browser.xul   chrome://sendtophone/content/ff-overlay.xul
+overlay	chrome://navigator/content/navigator.xul	chrome://sendtophone/content/ff-overlay.xul
+
+style chrome://global/content/customizeToolbar.xul chrome://sendtophone/skin/overlay.css
+
+# Support for Mac 
+override chrome://sendtophone/skin/uploads.css chrome://sendtophone/skin/uploads-mac.css os=Darwin

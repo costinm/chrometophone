@@ -1,0 +1,34 @@
+<!ENTITY sendtophoneToolbarButton.label "Fox to Phone">
+<!ENTITY sendtophoneToolbarButton.tooltip "Verzend deze pagina naar uw Android-telefoon">
+<!ENTITY sendtophoneContext.label "Deze koppeling naar Android verzenden">
+<!ENTITY sendtophoneContext.accesskey "A">
+<!ENTITY sendtophoneContextImage.label "Deze afbeelding naar Android verzenden">
+<!ENTITY sendtophoneContextImage.accesskey "A">
+<!ENTITY sendtophoneContextText.label "Deze tekst naar Android verzenden">
+<!ENTITY sendtophoneContextText.accesskey "A">
+<!ENTITY sendtophoneContextPage.label "Deze pagina naar Android verzenden">
+<!ENTITY sendtophoneContextPage.accesskey "A">
+<!ENTITY sendtophoneContextLogout.label "Afmelden">
+<!ENTITY sendtophoneContextLogout.accesskey "L">
+<!ENTITY sendtophoneOptions.title "Fox to Phone-voorkeuren">
+<!ENTITY sendtophoneProtocols.label "Protocollen">
+<!ENTITY sendtophoneContextSendFile.label "Bestanden verzenden…">
+<!ENTITY sendtophoneContextSendFile.accesskey "z">
+<!ENTITY sendtophoneContextSendFolder.label "Map verzenden…">
+<!ENTITY sendtophoneContextSendFolder.accesskey "M">
+<!ENTITY sendtophoneContextQrImage.label "Gedecodeerde QR-koppeling naar Android verzenden">
+<!ENTITY sendtophoneContextQrImage.accesskey "Q">
+<!ENTITY sendtophoneContextSendClipboard.label "Klembord verzenden">
+<!ENTITY sendtophoneContextSendClipboard.accesskey "K">
+<!ENTITY sendtophoneContextVideo.label "Video naar Android verzenden">
+<!ENTITY sendtophoneContextVideo.accesskey "V">
+<!ENTITY sendtophoneFileTransfers.label "Bestandsoverdrachten">
+<!ENTITY sendtophoneFileServer.label "Server">
+<!ENTITY sendtophoneFileServer.None "Geen">
+<!ENTITY sendtophoneFileServer.Custom "Aangepast">
+<!ENTITY sendtophoneFileServer.Disclaimer "Disclaimer: Wij (de ontwikkelaars van FoxToPhone) zijn niet gelieerd aan de hier genoemde externe hostingdiensten. U dient de erbij behorende servicevoorwaarden te lezen voordat u er gebruik van maakt.">
+<!ENTITY sendtophonePhoneAccounts.label "Telefoonaccounts">
+<!ENTITY sendtophonePhoneAccounts.description "Als u verscheidene Google-accounts gebruikt op uw apparaten kunt u ertussen wisselen nadat u ze hier hebt aangemaakt.">
+<!ENTITY sendtophonePhoneAccounts.add "Nieuw toevoegen">
+<!ENTITY sendtophonePhoneAccounts.rename "Hernoemen">
+<!ENTITY sendtophonePhoneAccounts.remove "Verwijderen">

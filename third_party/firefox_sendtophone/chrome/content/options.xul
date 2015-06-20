@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<!DOCTYPE window SYSTEM "chrome://sendtophone/locale/overlay.dtd">
+
+<prefwindow id="sendtophone-prefs"
+     title="&sendtophoneOptions.title;"
+     xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+
+	<prefpane>
+		<preferences>
+			<preference id="extensions.sendtophone.protocols.market" name="extensions.sendtophone.protocols.market" type="bool"/>
+			<preference id="extensions.sendtophone.protocols.sms" name="extensions.sendtophone.protocols.sms" type="bool"/>
+			<preference id="extensions.sendtophone.protocols.smsto" name="extensions.sendtophone.protocols.smsto" type="bool"/>
+			<preference id="extensions.sendtophone.protocols.tel" name="extensions.sendtophone.protocols.tel" type="bool"/>
+			<preference id="extensions.sendtophone.fileServerUrl" name="extensions.sendtophone.fileServerUrl" type="string"/>
+		</preferences>
+		
+		<groupbox style="padding:1em;">
+			<caption label="&sendtophoneProtocols.label;"/>
+		
+				<checkbox preference="extensions.sendtophone.protocols.market"
+					label="market:" />
+										
+				<checkbox id="sms" preference="extensions.sendtophone.protocols.sms"
+					label="sms:" oncommand="var o = document.getElementById('smsto'); o.checked=this.checked; o.doCommand();"  />
+				<checkbox id="smsto" preference="extensions.sendtophone.protocols.smsto"
+					label="smsto:" style="display:none"/>
+					
+				<checkbox preference="extensions.sendtophone.protocols.tel"
+					label="tel:" />
+		</groupbox>
+	
+	<groupbox style="padding:1em;">
+		<caption label="&sendtophonePhoneAccounts.label;"/>
+
+		<description style="width:400px; height:2em;">
+		&sendtophonePhoneAccounts.description;
+		</description>
+
+		<hbox>
+			<listbox id="accountsList" flex="1" style="height: 8em; "
+				seltype="single"
+				onselect="foxToPhonePreferences.onAccountSelected();"
+				>
+			</listbox>
+
+			<vbox align="end">
+				<button id="btnAddAccount" 
+					icon="add" label="&sendtophonePhoneAccounts.add;"
+					oncommand="foxToPhonePreferences.addAccount();"/>
+
+				<button id="btnRenameAccount" disabled="true" 
+					label="&sendtophonePhoneAccounts.rename;"
+					oncommand="foxToPhonePreferences.renameAccount();"/>
+
+				<button id="btnRemoveAccount" disabled="true" 
+					icon="remove" label="&sendtophonePhoneAccounts.remove;"
+					oncommand="foxToPhonePreferences.removeAccount();"/>
+			</vbox>
+		</hbox>
+
+	</groupbox>
+
+		<groupbox style="padding:1em; min-height:11em;">
+			<caption label="&sendtophoneFileTransfers.label;" />
+			<hbox align="center">
+				<label value="&sendtophoneFileServer.label;" 
+					flex="1"
+					control="extensionsSendToPhoneFileServer"/>
+
+				<menulist id="extensionsSendToPhoneFileServer">
+					<menupopup>
+						<menuitem value="" label="&sendtophoneFileServer.None;" />
+						<menuitem value="Custom" label="&sendtophoneFileServer.Custom;" />
+					</menupopup>
+				</menulist>
+
+				<description style="width:300px; min-height:4em;" id="foxtophoneDisclaimer">
+				&sendtophoneFileServer.Disclaimer;
+				</description>
+			</hbox>
+
+
+			<hbox align="center" id="hboxFileServerUrl">
+				<textbox id="extensionsSendToPhoneFileServerUrl" flex="1" preference="extensions.sendtophone.fileServerUrl" />
+			</hbox>
+		</groupbox>
+
+	</prefpane>
+	<script type="application/x-javascript" src="options.js" />
+
+</prefwindow>
