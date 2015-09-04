@@ -17,15 +17,22 @@ package com.google.android.apps.chrometophone;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
+import android.accounts.AccountManagerCallback;
+import android.accounts.AccountManagerFuture;
+import android.accounts.OperationCanceledException;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.os.Messenger;
 import android.text.Html;
 import android.text.method.LinkMovementMethod;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -40,16 +47,31 @@ import android.widget.RadioGroup;
 import android.widget.RadioGroup.OnCheckedChangeListener;
 import android.widget.TextView;
 
-import com.google.android.gcm.GCMRegistrar;
+import com.google.android.gms.auth.GoogleAuthException;
+import com.google.android.gms.auth.GoogleAuthUtil;
+import com.google.android.gms.auth.UserRecoverableAuthException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 /**
- * Setup activity - takes user through the setup.
+ * Setup activity - takes user through the setup, if account and registration
+ * are not complete, or to the preferences screen if connected.
  */
-public class SetupActivity extends Activity {
-    public static final String UPDATE_UI_ACTION = "com.google.ctp.UPDATE_UI";
-    public static final String AUTH_PERMISSION_ACTION = "com.google.ctp.AUTH_PERMISSION";
+public class SetupActivity extends Activity implements Handler.Callback {
+
+    public static final String TAG = "c2p";
+
+    static final int MSG_AUTH_UI = 1;
+    static final int MSG_REG_MSG = 2;
+    static final int MSG_REGISTERED = 3;
+    static final int MSG_REG_ERR = 4;
+    static final int MSG_UNREGISTERED = 5;
+    static final int MSG_UNREGISTER_ERROR = 6;
+    static final int MSG_AUTH_ERR = 2;
+
+    private final Handler mHandler = new Handler(this);
+    private final Messenger messenger = new Messenger(mHandler);
 
     private boolean mPendingAuth = false;
     private int mScreenId = -1;
@@ -59,37 +81,44 @@ public class SetupActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        SharedPreferences prefs = Prefs.get(this);
-        int savedScreenId = prefs.getInt("savedScreenId", -1);
-        if (savedScreenId == -1) {
-            setScreenContent(R.layout.intro);
-        } else {
-            setScreenContent(savedScreenId);
-        }
-
-        registerReceiver(mUpdateUIReceiver, new IntentFilter(UPDATE_UI_ACTION));
-        registerReceiver(mAuthPermissionReceiver, new IntentFilter(AUTH_PERMISSION_ACTION));
+        showContent();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        showContent();
         if (mPendingAuth) {
             mPendingAuth = false;
-            String regId = GCMRegistrar.getRegistrationId(this);
-            if (!regId.equals("")) {
-                DeviceRegistrar.registerWithServer(this, regId);
-            } else {
-                GCMRegistrar.register(this, DeviceRegistrar.SENDER_ID);
+
+            if (!DeviceRegistrar.isRegisteredWithServer(this)) {
+                // registration not done yet - restart registration after
+                // intermediate screen.
+                register();
             }
         }
     }
 
-    @Override
-    public void onDestroy() {
-        unregisterReceiver(mUpdateUIReceiver);
-        unregisterReceiver(mAuthPermissionReceiver);
-        super.onDestroy();
+    private void showContent() {
+        // Decide what to show:
+        // - if no account set, intro
+        // -
+        // - if registered: real config
+
+        if (!DeviceRegistrar.isRegisteredWithServer(this)) {
+            // If not registered - show account selection
+            if ("".equals(Prefs.getPrefs(this).getAccount())) {
+                // First time, or after logout.
+                setIntroScreenContent();
+            } else {
+                // intro shown, selected an account - but register
+                // didn't finish. Allow user to change account.
+                setSelectAccountScreenContent();
+            }
+        } else {
+            // Account selected - show normal prefs
+            setConnectedScreenContent();
+        }
     }
 
     @Override
@@ -112,40 +141,9 @@ public class SetupActivity extends Activity {
         }
     }
 
-    private void setScreenContent(int screenId) {
-        mScreenId = screenId;
-        setContentView(screenId);
-        switch (screenId) {
-            // Screen shown if phone is registered/connected
-            case R.layout.connected: {
-                setConnectedScreenContent();
-                break;
-            }
-            // Ordered sequence of screens for setup
-            case R.layout.intro: {
-                setIntroScreenContent();
-                break;
-            }
-            case R.layout.select_account: {
-                setSelectAccountScreenContent();
-                break;
-            }
-            case R.layout.select_launch_mode: {
-                setSelectLaunchModeScreenContent();
-                break;
-            }
-            case R.layout.setup_complete: {
-                setSetupCompleteScreenContent();
-                break;
-            }
-        }
-        SharedPreferences prefs = Prefs.get(this);
-        SharedPreferences.Editor editor = prefs.edit();
-        editor.putInt("savedScreenId", screenId);
-        editor.commit();
-    }
 
     private void setIntroScreenContent() {
+        setContentView(R.layout.intro);
         String introText = getString(R.string.intro_text)
                 .replace("{tos_link}", HelpActivity.getTOSLink())
                 .replace("{pp_link}", HelpActivity.getPPLink());
@@ -165,17 +163,21 @@ public class SetupActivity extends Activity {
         nextButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                setScreenContent(R.layout.select_account);
+                setSelectAccountScreenContent();
             }
         });
     }
 
+    /**
+     * Select account, call register() on next.
+     */
     private void setSelectAccountScreenContent() {
+        setContentView(R.layout.select_account);
         final Button backButton = (Button) findViewById(R.id.back);
         backButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                setScreenContent(R.layout.intro);
+                setIntroScreenContent();
             }
         });
 
@@ -188,7 +190,10 @@ public class SetupActivity extends Activity {
                 TextView account = (TextView) listView.getChildAt(mAccountSelectedPosition);
                 backButton.setEnabled(false);
                 nextButton.setEnabled(false);
-                register((String) account.getText());
+
+                Prefs.getPrefs(SetupActivity.this).setAccount((String) account.getText());
+
+                register();
             }
         });
 
@@ -210,11 +215,12 @@ public class SetupActivity extends Activity {
     }
 
     private void setSelectLaunchModeScreenContent() {
+        setContentView(R.layout.select_launch_mode);
         Button backButton = (Button) findViewById(R.id.back);
         backButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                setScreenContent(R.layout.select_account);
+                setSelectAccountScreenContent();
             }
         });
 
@@ -223,7 +229,7 @@ public class SetupActivity extends Activity {
             @Override
             public void onClick(View v) {
                 storeLaunchModePreference();
-                setScreenContent(R.layout.setup_complete);
+                setSetupCompleteScreenContent();
             }
         });
 
@@ -231,6 +237,7 @@ public class SetupActivity extends Activity {
     }
 
     private void setSetupCompleteScreenContent() {
+        setContentView(R.layout.setup_complete);
         TextView textView = (TextView) findViewById(R.id.setup_complete_text);
         textView.setText(Html.fromHtml(getString((R.string.setup_complete_text))));
 
@@ -238,7 +245,7 @@ public class SetupActivity extends Activity {
         backButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                setScreenContent(R.layout.select_launch_mode);
+                setSelectLaunchModeScreenContent();
             }
         });
 
@@ -247,16 +254,18 @@ public class SetupActivity extends Activity {
         finishButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                SharedPreferences prefs = Prefs.get(context);
-                SharedPreferences.Editor editor = prefs.edit();
-                editor.putInt("savedScreenId", R.layout.connected);
-                editor.commit();
+                // Setup done, return to history screen
                 finish();
             }
         });
     }
 
+    /**
+     * Shown when registration is complete (iid and account set), to
+     * edit active preferences, when called from HistoryActivity menu
+     */
     private void setConnectedScreenContent() {
+        setContentView(R.layout.connected);
         SharedPreferences prefs = Prefs.get(this);
         TextView statusText = (TextView) findViewById(R.id.connected_with_account_text);
         statusText.setText(getString(R.string.connected_with_account_text) + " " +
@@ -269,7 +278,8 @@ public class SetupActivity extends Activity {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
                 storeLaunchModePreference();
-            } });
+            }
+        });
 
 
         Button disconnectButton = (Button) findViewById(R.id.disconnect);
@@ -285,14 +295,14 @@ public class SetupActivity extends Activity {
         SharedPreferences prefs = Prefs.get(this);
         SharedPreferences.Editor editor = prefs.edit();
         RadioGroup launchMode = (RadioGroup) findViewById(R.id.launch_mode_radio);
-        editor.putBoolean("launchBrowserOrMaps",
+        editor.putBoolean(Prefs.BROWSER_OR_MAPS,
                 launchMode.getCheckedRadioButtonId() == R.id.auto_launch);
         editor.commit();
     }
 
     private void setLaunchModePreferenceUI() {
         SharedPreferences prefs = Prefs.get(this);
-        if (prefs.getBoolean("launchBrowserOrMaps", true)) {
+        if (prefs.getBoolean(Prefs.BROWSER_OR_MAPS, true)) {
             RadioButton automaticButton = (RadioButton) findViewById(R.id.auto_launch);
             automaticButton.setChecked(true);
         } else {
@@ -301,18 +311,144 @@ public class SetupActivity extends Activity {
         }
     }
 
-    private void register(String account) {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == RC_AUTH) {
+            // recoverable auth result, retry to register
+            register();
+        }
+    }
+
+    private static final int RC_AUTH = 1;
+    /**
+     * Called from 'onClick' when account is selected.
+     * <p/>
+     * Also called from 'onResume', if pending authentication - to deal
+     * with account manger activities.
+     * <p/>
+     * Will grab the auth token and call the registration functions.
+     */
+    private void register() {
         ProgressBar progressBar = (ProgressBar) findViewById(R.id.progress_bar);
         progressBar.setVisibility(ProgressBar.VISIBLE);
         TextView textView = (TextView) findViewById(R.id.connecting_text);
         textView.setVisibility(ProgressBar.VISIBLE);
 
-        SharedPreferences prefs = Prefs.get(this);
-        SharedPreferences.Editor editor = prefs.edit();
-        editor.putString("accountName", account);
-        editor.commit();
+        final String account = Prefs.getPrefs(SetupActivity.this).getAccount();
 
-        GCMRegistrar.register(this, DeviceRegistrar.SENDER_ID);
+        boolean hasPlayServices = true;
+        try {
+            getPackageManager().getPackageInfo("com.google.android.gms", 0);
+        } catch (PackageManager.NameNotFoundException e) {
+            hasPlayServices = false;
+        }
+
+        final Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+        // Getting the token may require user interaction.
+        // Since we are in an activity, use the interactive version.
+        final String scope = Prefs.getPrefs(SetupActivity.this).getScope();
+
+        if (hasPlayServices || Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+            // On Gingerbread will cause PlayServices to be downloaded.
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        String token = GoogleAuthUtil.getToken(SetupActivity.this, account, scope);
+                        startRegister(token);
+                    } catch (IOException e) {
+                        msg.obj = e.toString();
+                        msg.sendToTarget();
+
+                    } catch (UserRecoverableAuthException e) {
+                        startActivityForResult(e.getIntent(), RC_AUTH);
+
+                    } catch (GoogleAuthException e) {
+
+                        msg.obj = e.toString();
+                        msg.sendToTarget();
+                    }
+
+                }
+            }).start();
+        } else {
+            // Play services not available - ICS to JB MR2. Use AccountManager
+
+
+            AccountManager.get(this).getAuthToken(new Account(account, "com.google"),
+                    scope, null, this,
+                    new AccountManagerCallback<Bundle>() {
+                        @Override
+                        public void run(AccountManagerFuture<Bundle> future) {
+                            try {
+                                String token = future.getResult().getString(AccountManager.KEY_AUTHTOKEN);
+                                AccountManager.get(SetupActivity.this).invalidateAuthToken("com.google", token);
+
+                                AccountManager.get(SetupActivity.this).getAuthToken(
+                                        new Account(account, "com.google"),
+                                        Prefs.getPrefs(SetupActivity.this).getScope(),
+                                        null,
+                                        SetupActivity.this,
+                                        new AccountManagerCallback<Bundle>() {
+                                            @Override
+                                            public void run(AccountManagerFuture<Bundle> future) {
+                                                try {
+                                                    String token = future.getResult().getString(AccountManager.KEY_AUTHTOKEN);
+
+                                                    Log.i(TAG, "Got KEY_AUTHTOKEN: " + token);
+
+                                                    if (token != null) {
+                                                        // At the end of the flow will call startActivity.
+                                                        startRegister(token);
+                                                    } else {
+                                                        Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+                                                        msg.obj = "Missing token";
+                                                        msg.sendToTarget();
+                                                    }
+
+                                                } catch (OperationCanceledException e) {
+                                                    Log.i(TAG, "The user has denied you access to the API");
+                                                    Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+                                                    msg.obj = e.toString();
+                                                    msg.sendToTarget();
+                                                } catch (Exception e) {
+                                                    Log.i(TAG, "Exception: ", e);
+                                                    Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+                                                    msg.obj = e.toString();
+                                                    msg.sendToTarget();
+                                                }
+
+                                            }
+                                        }, null);
+
+
+                            } catch (OperationCanceledException e) {
+                                Log.i(TAG, "The user has denied you access to the API");
+                                Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+                                msg.obj = e.toString();
+                                msg.sendToTarget();
+                            } catch (Exception e) {
+                                Log.i(TAG, "Exception: ", e);
+                                Message msg = Message.obtain(mHandler, MSG_AUTH_ERR);
+                                msg.obj = e.toString();
+                                msg.sendToTarget();
+                            }
+                        }
+                    }, null);
+        }
+
+    }
+
+    /**
+     * Call register in background, this is called from activities to make sure we are
+     * registered.
+     */
+    void startRegister(final String token) {
+        Intent i = new Intent(this, DeviceRegistrar.class);
+        i.putExtra(DeviceRegistrar.ACTION, DeviceRegistrar.REGISTER_ACTION);
+        i.putExtra("messenger", messenger);
+        i.putExtra(DeviceRegistrar.EXTRA_AUTH_TOKEN, token);
+        startService(i);
     }
 
     private void unregister() {
@@ -324,7 +460,10 @@ public class SetupActivity extends Activity {
         Button disconnectButton = (Button) findViewById(R.id.disconnect);
         disconnectButton.setEnabled(false);
 
-        GCMRegistrar.unregister(this);
+        Intent i = new Intent(this, DeviceRegistrar.class);
+        i.putExtra(DeviceRegistrar.ACTION, DeviceRegistrar.UNREGISTER_ACTION);
+        i.putExtra("messenger", messenger);
+        startService(i);
     }
 
     private String[] getGoogleAccounts() {
@@ -341,63 +480,72 @@ public class SetupActivity extends Activity {
         return result;
     }
 
-    private void handleConnectingUpdate(int status) {
-        if (status == DeviceRegistrar.REGISTERED_STATUS) {
-            setScreenContent(R.layout.select_launch_mode);
-        } else {
-            ProgressBar progressBar = (ProgressBar) findViewById(R.id.progress_bar);
-            progressBar.setVisibility(ProgressBar.INVISIBLE);
-            TextView textView = (TextView) findViewById(R.id.connecting_text);
-            textView.setText(status == DeviceRegistrar.AUTH_ERROR_STATUS ? R.string.auth_error_text :
-                    R.string.connect_error_text);
+    /**
+     * While setup screen is active, it'll display a progress bar
+     * and interact with DeviceRegistrar service for background
+     * operations. Communication happens using messages.
+     *
+     * @param msg
+     */
+    @Override
+    public boolean handleMessage(Message msg) {
+        ProgressBar progressBar = (ProgressBar) findViewById(R.id.progress_bar);
+        TextView textView = (TextView) findViewById(R.id.connecting_text);
 
-            Button backButton = (Button) findViewById(R.id.back);
-            backButton.setEnabled(true);
-
-            Button nextButton = (Button) findViewById(R.id.next);
-            nextButton.setEnabled(true);
-        }
-    }
-
-    private void handleDisconnectingUpdate(int status) {
-        if (status == DeviceRegistrar.UNREGISTERED_STATUS) {
-            setScreenContent(R.layout.intro);
-        } else {
-            ProgressBar progressBar = (ProgressBar) findViewById(R.id.progress_bar);
-            progressBar.setVisibility(ProgressBar.INVISIBLE);
-
-            TextView textView = (TextView) findViewById(R.id.disconnecting_text);
-            textView.setText(R.string.disconnect_error_text);
-
-            Button disconnectButton = (Button) findViewById(R.id.disconnect);
-            disconnectButton.setEnabled(true);
-        }
-    }
-
-    private final BroadcastReceiver mUpdateUIReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (mScreenId == R.layout.select_account) {
-                handleConnectingUpdate(intent.getIntExtra(
-                        DeviceRegistrar.STATUS_EXTRA, DeviceRegistrar.ERROR_STATUS));
-            } else if (mScreenId == R.layout.connected) {
-                handleDisconnectingUpdate(intent.getIntExtra(
-                        DeviceRegistrar.STATUS_EXTRA, DeviceRegistrar.ERROR_STATUS));
-            }
-        }
-    };
-
-    private final BroadcastReceiver mAuthPermissionReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Bundle extras = intent.getBundleExtra("AccountManagerBundle");
-            if (extras != null) {
-                Intent authIntent = (Intent) extras.get(AccountManager.KEY_INTENT);
+        switch (msg.what) {
+            case MSG_AUTH_UI:
+                Intent authIntent = ((Bundle) msg.obj).getParcelable(AccountManager.KEY_INTENT);
                 if (authIntent != null) {
                     mPendingAuth = true;
                     startActivity(authIntent);
                 }
+                break;
+
+            case MSG_AUTH_ERR: {
+                progressBar.setVisibility(ProgressBar.INVISIBLE);
+                textView.setText("Authentication error " + msg.obj);
+                Button backButton = (Button) findViewById(R.id.back);
+                backButton.setEnabled(true);
+
+                Button nextButton = (Button) findViewById(R.id.next);
+                nextButton.setEnabled(true);
+
+                break;
             }
+
+            case MSG_UNREGISTERED:
+                // Returned after successful unregistration
+                setIntroScreenContent();
+                break;
+
+            case MSG_UNREGISTER_ERROR:
+                progressBar.setVisibility(ProgressBar.INVISIBLE);
+
+                TextView textViewDisconnecting = (TextView) findViewById(R.id.disconnecting_text);
+                textViewDisconnecting.setText(R.string.disconnect_error_text);
+
+                Button disconnectButton = (Button) findViewById(R.id.disconnect);
+                disconnectButton.setEnabled(true);
+                break;
+
+            case MSG_REGISTERED:
+                setSelectLaunchModeScreenContent();
+                break;
+            case MSG_REG_ERR:
+                // != 200 status from app engine on registration
+                // arg1 == sc
+
+                progressBar.setVisibility(ProgressBar.INVISIBLE);
+
+                textView.setText(R.string.connect_error_text);
+
+                Button backButton = (Button) findViewById(R.id.back);
+                backButton.setEnabled(true);
+
+                Button nextButton = (Button) findViewById(R.id.next);
+                nextButton.setEnabled(true);
+                break;
         }
-    };
+        return false;
+    }
 }

@@ -23,7 +23,7 @@ public class HistoryDatabase {
     private static final String RECEIVE_TIME_COL_NAME = "receive_time";
 
     private static final String[] ALL_COLUMNS =
-        new String[] { URL_COL_NAME, TITLE_COL_NAME, RECEIVE_TIME_COL_NAME };
+            new String[]{URL_COL_NAME, TITLE_COL_NAME, RECEIVE_TIME_COL_NAME};
 
     private final SQLiteDatabase mDb;
     private SQLiteStatement mInsertStatement;
@@ -45,7 +45,7 @@ public class HistoryDatabase {
 
     public void insertHistory(String title, String url) {
         if (mInsertStatement == null) {
-            mInsertStatement = mDb.compileStatement("INSERT OR REPLACE INTO "+ TABLE_NAME +
+            mInsertStatement = mDb.compileStatement("INSERT OR REPLACE INTO " + TABLE_NAME +
                     "(" + URL_COL_NAME + ", " +
                     TITLE_COL_NAME + ", " +
                     RECEIVE_TIME_COL_NAME +
@@ -65,8 +65,8 @@ public class HistoryDatabase {
 
     public void deleteHistory(String url) {
         if (mDeleteStatement == null) {
-            mDeleteStatement = mDb.compileStatement("DELETE FROM "+ TABLE_NAME +
-                                                    " WHERE " + URL_COL_NAME + " == ?");
+            mDeleteStatement = mDb.compileStatement("DELETE FROM " + TABLE_NAME +
+                    " WHERE " + URL_COL_NAME + " == ?");
         }
         mDeleteStatement.bindString(1, url);
         mDeleteStatement.execute();
@@ -74,7 +74,7 @@ public class HistoryDatabase {
 
     public void deleteAllHistory() {
         if (mDeleteAllStatement == null) {
-            mDeleteAllStatement = mDb.compileStatement("DELETE FROM "+ TABLE_NAME);
+            mDeleteAllStatement = mDb.compileStatement("DELETE FROM " + TABLE_NAME);
         }
         mDeleteAllStatement.execute();
     }
@@ -93,7 +93,7 @@ public class HistoryDatabase {
         }
 
         private void createHistoryTable(SQLiteDatabase db) {
-            db.execSQL("CREATE TABLE "+ TABLE_NAME + "(" +
+            db.execSQL("CREATE TABLE " + TABLE_NAME + "(" +
                     URL_COL_NAME + " TEXT PRIMARY KEY, " +
                     TITLE_COL_NAME + " TEXT NOT NULL, " +
                     RECEIVE_TIME_COL_NAME + " INTEGER)");

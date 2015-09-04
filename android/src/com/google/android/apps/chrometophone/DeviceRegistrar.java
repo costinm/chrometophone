@@ -15,139 +15,63 @@
  */
 package com.google.android.apps.chrometophone;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
-
+import android.app.IntentService;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
-import android.provider.Settings.Secure;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.util.Log;
 
-import com.google.android.gcm.GCMRegistrar;
+import com.google.android.gms.iid.InstanceID;
+import com.google.android.gms.iid.InstanceIDListenerService;
 
 /**
- * Register/unregister with the Chrome to Phone App Engine server.
+ * Register/unregister with GCM and the Chrome to Phone App Engine server.
  */
-public class DeviceRegistrar {
+public class DeviceRegistrar extends IntentService {
+
+    public static final String EXTRA_AUTH_TOKEN = "authtoken";
+
     public static final String STATUS_EXTRA = "Status";
     public static final int REGISTERED_STATUS = 1;
     public static final int AUTH_ERROR_STATUS = 2;
     public static final int UNREGISTERED_STATUS = 3;
     public static final int ERROR_STATUS = 4;
 
+    static final String REGISTER_PATH = "/register";
+    static final String UPDATE_PATH = "/update";
+    static final String UNREGISTER_PATH = "/unregister";
+
+    // Extra indicating the action to perform in the service
+    static final String ACTION = "action";
+
+    static final int REGISTER_ACTION = 1;
+    static final int UNREGISTER_ACTION = 2;
+    // Called to update the token, on token refresh
+    static final int UPDATE_TOKEN_ACTION = 3;
+
     private static final String TAG = "DeviceRegistrar";
-    static final String SENDER_ID = "206147423037";
 
-    private static final String REGISTER_PATH = "/register";
-    private static final String UNREGISTER_PATH = "/unregister";
 
-    public static void registerWithServer(final Context context,
-          final String deviceRegistrationID) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                Intent updateUIIntent = new Intent("com.google.ctp.UPDATE_UI");
-                try {
-                    HttpResponse res = makeRequest(context, deviceRegistrationID, REGISTER_PATH);
-                    if (res.getStatusLine().getStatusCode() == 200) {
-                        GCMRegistrar.setRegisteredOnServer(context, true);
-                        updateUIIntent.putExtra(STATUS_EXTRA, REGISTERED_STATUS);
-                    } else if (res.getStatusLine().getStatusCode() == 400) {
-                        updateUIIntent.putExtra(STATUS_EXTRA, AUTH_ERROR_STATUS);
-                    } else {
-                        Log.w(TAG, "Registration error " +
-                                String.valueOf(res.getStatusLine().getStatusCode()));
-                        updateUIIntent.putExtra(STATUS_EXTRA, ERROR_STATUS);
-                    }
-                    context.sendBroadcast(updateUIIntent);
-                    // Check if this is an update from C2DM to GCM - if it is, remove the
-                    // old registration id.
-                    SharedPreferences settings = Prefs.get(context);
-                    String c2dmRegId = settings.getString("deviceRegistrationID", null);
-                    if (c2dmRegId != null) {
-                        Log.i(TAG, "Removing old C2DM registration id");
-                        SharedPreferences.Editor editor = settings.edit();
-                        editor.remove("deviceRegistrationID");
-                        editor.commit();
-                    }
-                } catch (AppEngineClient.PendingAuthException pae) {
-                    // Get setup activity to ask permission from user.
-                    Intent intent = new Intent(SetupActivity.AUTH_PERMISSION_ACTION);
-                    intent.putExtra("AccountManagerBundle", pae.getAccountManagerBundle());
-                    context.sendBroadcast(intent);
-                } catch (Exception e) {
-                    Log.w(TAG, "Registration error " + e.getMessage());
-                    updateUIIntent.putExtra(STATUS_EXTRA, ERROR_STATUS);
-                    context.sendBroadcast(updateUIIntent);
-                }
-            }
-        }).start();
+    public DeviceRegistrar() {
+        super("DeviceRegistrar");
     }
 
-    public static void unregisterWithServer(final Context context, final String deviceRegistrationID) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                Intent updateUIIntent = new Intent("com.google.ctp.UPDATE_UI");
-                try {
-                    HttpResponse res = makeRequest(context, deviceRegistrationID, UNREGISTER_PATH);
-                    if (res.getStatusLine().getStatusCode() != 200) {
-                        Log.w(TAG, "Unregistration error " +
-                                String.valueOf(res.getStatusLine().getStatusCode()));
-                    } else {
-                      GCMRegistrar.setRegisteredOnServer(context, false);
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Unregistration error " + e.getMessage());
-                } finally {
-                    SharedPreferences settings = Prefs.get(context);
-                    SharedPreferences.Editor editor = settings.edit();
-                    editor.remove("accountName");
-                    editor.commit();
-                    updateUIIntent.putExtra(STATUS_EXTRA, UNREGISTERED_STATUS);
-                }
-
-                // Update dialog activity
-                context.sendBroadcast(updateUIIntent);
-            }
-        }).start();
+    /**
+     * Called from HistoryActivity and SetupActivity, to determine
+     * if it needs setup. The preference is set after registration
+     * with server, reset on unregister.
+     */
+    public static boolean isRegisteredWithServer(final Context context) {
+        final String iid = Prefs.getPrefs(context).getIid();
+        return !iid.equals("");
     }
 
-    private static HttpResponse makeRequest(Context context, String deviceRegistrationID,
-            String urlPath) throws Exception {
-        String accountName = getAccountName(context);
-
-        List<NameValuePair> params = new ArrayList<NameValuePair>();
-        params.add(new BasicNameValuePair("devregid", deviceRegistrationID));
-
-        String deviceId = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
-        if (deviceId != null) {
-            params.add(new BasicNameValuePair("deviceId", deviceId));
-        }
-
-        // TODO: Allow device name to be configured
-        params.add(new BasicNameValuePair("deviceName", isTablet(context) ? "Tablet" : "Phone"));
-
-        params.add(new BasicNameValuePair("deviceType", "ac2dm"));
-        params.add(new BasicNameValuePair("gcm", "true"));
-
-        AppEngineClient client = new AppEngineClient(context, accountName);
-        return client.makeRequest(urlPath, params);
-    }
-
-    static String getAccountName(Context context) {
-      SharedPreferences settings = Prefs.get(context);
-      String accountName = settings.getString("accountName", null);
-      return accountName;
-    }
-
-    static boolean isTablet (Context context) {
+    static boolean isTablet(Context context) {
         // TODO: This hacky stuff goes away when we allow users to target devices
         int xlargeBit = 4; // Configuration.SCREENLAYOUT_SIZE_XLARGE;  // upgrade to HC SDK to get this
         Configuration config = context.getResources().getConfiguration();
@@ -155,21 +79,177 @@ public class DeviceRegistrar {
     }
 
     /**
-     * Update the device to use GCM instead of C2DM.
+     * Make the http request to register with the server. This is blocking, will run in a thread.
+     * <p/>
+     * Will send a message when completed to resume the activity.
+     *
+     * @param context
+     * @param token
+     * @param handler
+     * @return
+     * @throws Exception
      */
-    static boolean updateC2DM(Context context) {
-        SharedPreferences prefs = Prefs.get(context);
-        String c2dmRegId = prefs.getString("deviceRegistrationID", null);
-        // The old versions of the app that used C2DM stored the registration id in the default
-        // preferences; the new version stores it in the GCM library.
-        if (c2dmRegId != null) {
-            Log.i(TAG, "Updating from C2DM to GCM");
-            // Since the server will update the existing DeviceInfo entry to use GCM,
-            // it's not necessary to call unregister
-            GCMRegistrar.register(context, DeviceRegistrar.SENDER_ID);
-            return true;
-        } else {
-            return false;
+    void registerWithServer(final Context context,
+                            final String token,
+                            Messenger handler) {
+        Message msg = Message.obtain();
+
+        try {
+            // Check if this is an update from C2DM to GCM - if it is, remove the
+            // old registration id.
+            SharedPreferences settings = Prefs.get(context);
+
+            // If we had a previous c2dm or GCM registration ID
+            String c2dmRegId = settings.getString(Prefs.OLD_REGID, "");
+
+            int sc = HttpClient.get(context).makeSimpleRequest(
+                    DeviceRegistrar.REGISTER_PATH, token,
+                    "deviceName", isTablet(context) ? "Tablet" : "Phone",
+                    "updatedIID", c2dmRegId);
+
+
+            if (sc == 200) {
+                SharedPreferences.Editor editor = settings.edit();
+
+                String iid = InstanceID.getInstance(this).getToken(Prefs.SENDER_ID, "GCM");
+                editor.putString(Prefs.IID, iid);
+
+                if (c2dmRegId.length() > 0) {
+                    Log.i(TAG, "Removing old C2DM registration id");
+                    editor.remove("deviceRegistrationID");
+                }
+                editor.commit();
+                msg.what = SetupActivity.MSG_REGISTERED;
+            } else {
+                msg.what = SetupActivity.MSG_REG_ERR;
+                msg.arg1 = sc;
+                Log.w(TAG, "Registration error " + sc);
+            }
+
+        } catch (Exception e) {
+            msg.what = SetupActivity.MSG_REG_ERR;
+            msg.arg1 = 501; // dummy status code
+            Log.w(TAG, "Registration error " + e.getMessage());
+        }
+
+        sendResponse(handler, msg);
+    }
+
+    /**
+     * Called when GCM requests a token update.
+     *
+     * Will send the saved token and a fresh token. Server will
+     * update the registration entry, looking up by the old token.
+     *
+     * If the server detects a different identity, will create a new
+     * registration entry. This would happen in case of backup/restore
+     * or if device ID is reset.
+     */
+    private void updateToken() {
+        try {
+            // Send the old token, if any - the server may need to update/track
+            String old = Prefs.getPrefs(this).getIid();
+
+            // Current token is sent in all requests
+
+            int sc = HttpClient.get(this).makeSimpleRequest(
+                    DeviceRegistrar.UPDATE_PATH, null,
+                    "updatedIID", old);
+            if (sc == 200) {
+                return;
+            } else {
+                Log.w(TAG, "Update error " + sc);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Update error " + e.getMessage());
+        }
+    }
+
+    /**
+     * Call unregister - will unregister with the
+     * server.
+     */
+    void startUnregister(final Context context, Messenger messenger) {
+        final String iid = Prefs.getPrefs(context).getIid();
+        if (iid.equals("")) {
+            return;
+        }
+        Message msg = new Message();
+
+        try {
+            int sc = HttpClient.get(context).makeSimpleRequest(UNREGISTER_PATH,
+                    null);
+            if (sc == 200) {
+                InstanceID.getInstance(context).deleteToken(Prefs.SENDER_ID, "GCM");
+
+                Prefs.getPrefs(context).setIid("");
+                Prefs.getPrefs(context).setAccount("");
+
+                msg.what = SetupActivity.MSG_UNREGISTERED;
+            } else {
+                // Update dialog activity
+                msg.what = SetupActivity.MSG_UNREGISTER_ERROR;
+                msg.obj = "Status: " + sc;
+            }
+        } catch (Exception e) {
+            msg.what = SetupActivity.MSG_UNREGISTER_ERROR;
+            msg.obj = e.toString();
+        }
+        sendResponse(messenger, msg);
+    }
+
+    private void sendResponse(Messenger messenger, Message msg) {
+        if (messenger != null) {
+            try {
+                messenger.send(msg);
+            } catch (RemoteException e) {
+                // should be alive - it's in same process
+                Log.i(TAG, "Unexpected messenger error", e);
+            }
+        }
+    }
+
+    @Override
+    protected void onHandleIntent(Intent intent) {
+        int action = intent.getIntExtra(ACTION, 0);
+        Messenger messenger = (Messenger) intent.getParcelableExtra("messenger");
+        switch (action) {
+            case REGISTER_ACTION:
+                registerWithServer(this, intent.getStringExtra(EXTRA_AUTH_TOKEN),
+                        messenger);
+                break;
+            case UNREGISTER_ACTION:
+                startUnregister(this, messenger);
+                break;
+            case UPDATE_TOKEN_ACTION:
+                updateToken();
+                break;
+
+        }
+
+    }
+
+    /**
+     * Called when version is updated ( app upgraded ), will update
+     * registration so server knows current version.
+     */
+    public static final class Updater extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Intent i = new Intent(context, DeviceRegistrar.class);
+            i.putExtra(ACTION, UPDATE_TOKEN_ACTION);
+            context.startService(i);
+        }
+    }
+
+    public static final class IIDListener extends InstanceIDListenerService {
+        @Override
+        public void onTokenRefresh() {
+            super.onTokenRefresh();
+            Intent i = new Intent(this, DeviceRegistrar.class);
+            i.putExtra(ACTION, UPDATE_TOKEN_ACTION);
+            startService(i);
         }
     }
 }

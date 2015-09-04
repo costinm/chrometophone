@@ -16,27 +16,18 @@
 
 package com.google.android.apps.chrometophone;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
-
-import android.accounts.AccountManager;
 import android.app.Activity;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.widget.Toast;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
- * Invoked when user selects "Share page" in the browser. Sends link
- * to AppEngine server.
+ * Invoked when user selects "Share page". Sends link to AppEngine server.
  */
 public class ShareLinkActivity extends Activity implements Handler.Callback {
     private static final int TOAST_MSG = 0;
@@ -77,34 +68,20 @@ public class ShareLinkActivity extends Activity implements Handler.Callback {
             public void run() {
                 sendToast(getString(R.string.sending_link_toast));
                 try {
-                    List<NameValuePair> params = new ArrayList<NameValuePair>();
-                    params.add(new BasicNameValuePair("url", mPendingLink));
-                    params.add(new BasicNameValuePair("deviceName", "Chrome"));
-                    SharedPreferences settings = Prefs.get(ShareLinkActivity.this);
-                    final String accountName = settings.getString("accountName", null);
-                    if (accountName == null) {
-                        sendToast(getString(R.string.link_not_sent_auth_toast));
-                        finish();
-                        return;
-                    }
+                    HttpClient client = HttpClient.get(ShareLinkActivity.this);
 
-                    AppEngineClient client = new AppEngineClient(ShareLinkActivity.this, accountName);
-                    HttpResponse res = client.makeRequest(SEND_PATH, params);
-                    if (res.getStatusLine().getStatusCode() == 200) {
+                    int sc = client.makeSimpleRequest(SEND_PATH, null,
+                            "url", mPendingLink,
+                            "deviceName", "Chrome");
+                    if (sc == 200) {
                         sendToast(getString(R.string.link_sent_toast));
+                    } else if (sc == 401 || sc == 403) {
+                        // TODO: if auth, show setup activity
+                        sendToast(getString(R.string.link_not_sent_auth_toast));
                     } else {
                         sendToast(getString(R.string.link_not_sent_toast));
                     }
                     finish();
-                } catch (AppEngineClient.PendingAuthException pae) {
-                    Intent authIntent = (Intent) pae.getAccountManagerBundle().get(AccountManager.KEY_INTENT);
-                    if (authIntent != null && !mPendingAuth) {
-                        mPendingAuth = true;
-                        mHandler.sendMessage(Message.obtain(mHandler, START_ACTIVITY_MSG, 0, 0, authIntent));
-                    } else {
-                        sendToast(getString(R.string.link_not_sent_auth_toast));
-                        finish();
-                    }
                 } catch (Exception e) {
                     sendToast(getString(R.string.link_not_sent_toast));
                     finish();

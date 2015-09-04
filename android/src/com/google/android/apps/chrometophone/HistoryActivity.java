@@ -7,7 +7,6 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.provider.Browser;
@@ -24,14 +23,15 @@ import android.widget.ExpandableListView;
 import android.widget.ExpandableListView.OnChildClickListener;
 import android.widget.TextView;
 
-import com.google.android.gcm.GCMRegistrar;
-
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.Calendar;
 
 /**
  * Activity that shows the history of links received.
+ *
+ * This is the main activity - but will detect if the setup is not finished
+ * and redirect to the SetupActivity.
  */
 public class HistoryActivity extends Activity implements OnChildClickListener {
     private static final int DIALOG_LINK_ACTION = 1;
@@ -48,28 +48,6 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        boolean isGcmUpdate = DeviceRegistrar.updateC2DM(this);
-        if (!isGcmUpdate) {
-            // Run the setup first if necessary
-            String gcmRegId = GCMRegistrar.getRegistrationId(this);
-            if (gcmRegId.equals("")) {
-                String accountName = DeviceRegistrar.getAccountName(this);
-                if (accountName == null) {
-                    // first time app is run
-                    startActivity(new Intent(this, SetupActivity.class));
-                } else {
-                    // app was converted from C2DM to GCM, but process didn't
-                    // complete
-                    GCMRegistrar.register(this, DeviceRegistrar.SENDER_ID);
-                }
-            } else {
-                // check if the regId must be sent to the server
-                if (!GCMRegistrar.isRegisteredOnServer(this)) {
-                    DeviceRegistrar.registerWithServer(this, gcmRegId);
-                }
-            }
-        }
-
         setContentView(R.layout.history);
         mList = (ExpandableListView) findViewById(android.R.id.list);
         mList.setOnCreateContextMenuListener(this);
@@ -79,6 +57,13 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
         mList.setAdapter(mListAdapter);
 
         mContext = this;
+
+        // Make sure we're registered and good
+        // If not registered - jump to SetupActivity, also available from menu to customize.
+        if (!DeviceRegistrar.isRegisteredWithServer(this)) {
+            startActivityForResult(new Intent(this, SetupActivity.class),
+                    SETUP_ACTIVITY_REQUEST_CODE);
+        }
     }
 
     @Override
@@ -115,18 +100,17 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
     }
 
     @Override
-    protected void onActivityResult (int requestCode, int resultCode, Intent data) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == SETUP_ACTIVITY_REQUEST_CODE) {
-            String gcmRegId = GCMRegistrar.getRegistrationId(this);
-            if (gcmRegId.equals("")) {
-                finish();  // user asked to exit
+            if (!DeviceRegistrar.isRegisteredWithServer(this)) {
+                finish();  // user asked to exit before finishing registration
             }
         }
     }
 
     @Override
     public boolean onChildClick(ExpandableListView parent, View v, int groupPosition,
-            int childPosition, long id) {
+                                int childPosition, long id) {
         mSelectedLink = mListAdapter.getLinkAtPosition(groupPosition, childPosition);
         mSelectedGroup = groupPosition;
         showDialog(DIALOG_LINK_ACTION);
@@ -142,37 +126,37 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
     @Override
     protected Dialog onCreateDialog(int id) {
         switch (id) {
-        case DIALOG_LINK_ACTION:
-            if (mSelectedLink != null) {
-                return new AlertDialog.Builder(this)
-                    .setTitle(mSelectedLink.mTitle)
-                    .setItems(R.array.link_action_dialog_items, new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int which) {
-                            if (which == 0) {  // Open
-                                startActivity(LauncherUtils.getLaunchIntent(mContext,
-                                        mSelectedLink.mTitle, mSelectedLink.mUrl, null));
-                            } else if (which == 1) {  // Add bookmark
-                                Browser.saveBookmark(mContext, mSelectedLink.mTitle,
-                                        mSelectedLink.mUrl);
-                            } else if (which == 2) {  // Share link
-                                Intent intent = new Intent(Intent.ACTION_SEND);
-                                intent.putExtra(Intent.EXTRA_TEXT, mSelectedLink.mUrl);
-                                intent.setType("text/plain");
-                                startActivity(Intent.createChooser(intent,
-                                        getString(R.string.share_chooser_title)));
-                            } else if (which == 3) {  // Copy link URL
-                                ClipboardManager cm =
-                                    (ClipboardManager) mContext.getSystemService(CLIPBOARD_SERVICE);
-                                cm.setText(mSelectedLink.mUrl);
-                            } else if (which == 4) {  // Remove from history
-                                HistoryDatabase.get(mContext).deleteHistory(mSelectedLink.mUrl);
-                                mListAdapter.refresh();
-                                mList.collapseGroup(mSelectedGroup);
-                                mList.expandGroup(mSelectedGroup);
-                            }
-                        }
-                    }).create();
-            }
+            case DIALOG_LINK_ACTION:
+                if (mSelectedLink != null) {
+                    return new AlertDialog.Builder(this)
+                            .setTitle(mSelectedLink.mTitle)
+                            .setItems(R.array.link_action_dialog_items, new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface dialog, int which) {
+                                    if (which == 0) {  // Open
+                                        startActivity(LauncherUtils.getLaunchIntent(mContext,
+                                                mSelectedLink.mTitle, mSelectedLink.mUrl, null));
+                                    } else if (which == 1) {  // Add bookmark
+                                        Browser.saveBookmark(mContext, mSelectedLink.mTitle,
+                                                mSelectedLink.mUrl);
+                                    } else if (which == 2) {  // Share link
+                                        Intent intent = new Intent(Intent.ACTION_SEND);
+                                        intent.putExtra(Intent.EXTRA_TEXT, mSelectedLink.mUrl);
+                                        intent.setType("text/plain");
+                                        startActivity(Intent.createChooser(intent,
+                                                getString(R.string.share_chooser_title)));
+                                    } else if (which == 3) {  // Copy link URL
+                                        ClipboardManager cm =
+                                                (ClipboardManager) mContext.getSystemService(CLIPBOARD_SERVICE);
+                                        cm.setText(mSelectedLink.mUrl);
+                                    } else if (which == 4) {  // Remove from history
+                                        HistoryDatabase.get(mContext).deleteHistory(mSelectedLink.mUrl);
+                                        mListAdapter.refresh();
+                                        mList.collapseGroup(mSelectedGroup);
+                                        mList.expandGroup(mSelectedGroup);
+                                    }
+                                }
+                            }).create();
+                }
         }
         return null;
     }
@@ -188,7 +172,7 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
         super.dump(prefix, fd, writer, args);
         writer.println(prefix + "GCM info");
         String innerPrefix = prefix + "  ";
-        String accountName = DeviceRegistrar.getAccountName(this);
+        String accountName = Prefs.getPrefs(mContext).getAccount();
         String key = "N/A";
         if (accountName != null) {
             String deviceId = Secure.getString(getContentResolver(), Secure.ANDROID_ID);
@@ -199,16 +183,11 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
         }
         writer.println(innerPrefix + "account: " + accountName);
         writer.println(innerPrefix + "server key: " + key);
-        SharedPreferences prefs = Prefs.get(this);
-        String c2dmRegId = prefs.getString("deviceRegistrationID", "N/A");
-        writer.println(innerPrefix + "C2DM regId: " + c2dmRegId);
-        String gcmRegId = GCMRegistrar.getRegistrationId(this);
+        String gcmRegId = Prefs.getPrefs(this).getIid();
         if (gcmRegId.equals("")) {
             gcmRegId = "N/A";
         }
         writer.println(innerPrefix + "GCM regId: " + gcmRegId);
-        writer.println(innerPrefix + "registered on GCM: " + GCMRegistrar.isRegistered(this));
-        writer.println(innerPrefix + "registered on server: " + GCMRegistrar.isRegisteredOnServer(this));
     }
 
     class HistoryExpandableListAdapter extends BaseExpandableListAdapter {
@@ -264,7 +243,7 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
 
         @Override
         public View getChildView(int groupPosition, int childPosition, boolean isLastChild,
-                View convertView, ViewGroup parent) {
+                                 View convertView, ViewGroup parent) {
             HistoryItemView itemView;
             if (null == convertView || !(convertView instanceof HistoryItemView)) {
                 itemView = new HistoryItemView(mContext);
@@ -308,7 +287,7 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
 
         @Override
         public View getGroupView(int groupPosition, boolean isExpanded, View convertView,
-                ViewGroup parent) {
+                                 ViewGroup parent) {
             TextView item;
             if (null == convertView || !(convertView instanceof TextView)) {
                 LayoutInflater factory = LayoutInflater.from(mContext);
@@ -349,7 +328,7 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
 
     class DateBinSorter {
         public static final int NUM_BINS = 4;
-        private final long [] mBins = new long[NUM_BINS-1];
+        private final long[] mBins = new long[NUM_BINS - 1];
         private final Context mContext;
 
         public DateBinSorter(Context context) {
@@ -372,8 +351,8 @@ public class HistoryActivity extends Activity implements OnChildClickListener {
 
         /**
          * Get the date bin for a specified time:
-         *     0 => today, 1 => last week,
-         *     2 => last month, 3 => older
+         * 0 => today, 1 => last week,
+         * 2 => last month, 3 => older
          */
         public int getBin(long time) {
             int lastDay = NUM_BINS - 1;

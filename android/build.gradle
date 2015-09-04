@@ -1,0 +1,75 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.2.3'
+    }
+}
+apply plugin: 'com.android.application'
+
+dependencies {
+    compile fileTree(include: '*.jar', dir: 'libs')
+    // Make sure that you have installed "Extras -> Google Play services" component in Android SDK Manager
+    //compile 'com.google.android.gms:play-services:3.1.+'
+    //compile project(path: ':backend', configuration: 'android-endpoints')
+    compile 'com.android.support:support-v4:22.2.0'
+    compile 'com.google.android.gms:play-services:7.5.0'
+        testCompile 'junit:junit:4.12'
+        testCompile "org.mockito:mockito-core:1.9.5"
+    //testCompile ""
+
+}
+
+//http://tools.android.com/tech-docs/new-build-system/user-guide
+android {
+    compileSdkVersion 21
+    buildToolsVersion "22.0.0"
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            resources.srcDirs = ['src']
+            aidl.srcDirs = ['src']
+            renderscript.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+        }
+
+        test {
+            java.srcDirs = ['tests/java']
+
+        }
+
+        // Move the tests to tests/java, tests/res, etc...
+        androidTest.setRoot('tests')
+
+        unitTest {
+            java.srcDirs = ['tests/java']
+
+        }
+
+            // Move the build types to build-types/<type>
+        // For instance, build-types/debug/java, build-types/debug/AndroidManifest.xml, ...
+        // This moves them out of them default location under src/<type>/... which would
+        // conflict with src/ being used by the main source set.
+        // Adding new build types or product flavors should be accompanied
+        // by a similar customization.
+        debug.setRoot('build-types/debug')
+        release.setRoot('build-types/release')
+    }
+    lintOptions {
+        abortOnError false
+    }
+    signingConfigs {
+        debug {
+            // Keys associated with a dev instance, so checked out
+            // version can be tested. Production builds use a different
+            // instance.
+            // You can define a different keystore, and configure it against
+            // a different base URL.
+            storeFile file("dev.keystore")
+        }
+    }
+}
