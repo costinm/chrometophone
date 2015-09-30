@@ -102,10 +102,16 @@ public class DeviceRegistrar extends IntentService {
             // If we had a previous c2dm or GCM registration ID
             String c2dmRegId = settings.getString(Prefs.OLD_REGID, "");
 
+            String oldRegId = c2dmRegId;
+            if ("".equals(oldRegId)) {
+                // removed from prefs after we upgraded to IID. Send the previous IID
+                oldRegId = Prefs.getPrefs(context).getIid();
+            }
+
             int sc = HttpClient.get(context).makeSimpleRequest(
                     DeviceRegistrar.REGISTER_PATH, token,
                     "deviceName", isTablet(context) ? "Tablet" : "Phone",
-                    "updatedIID", c2dmRegId);
+                    "updatedIID", oldRegId);
 
 
             if (sc == 200) {

@@ -9,6 +9,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.Ringtone;
@@ -38,7 +39,7 @@ public class LauncherUtils {
         } else {
             intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (isMapsURL(url)) {
+            if (isSupportedMapsURL(url, context)) {
                 intent.setClassName(GMM_PACKAGE_NAME, GMM_CLASS_NAME);
             } else if (isYouTubeURL(url)) {
                 intent.setPackage(YT_PACKAGE_NAME);
@@ -119,9 +120,19 @@ public class LauncherUtils {
         return number;
     }
 
-    public static boolean isMapsURL(String url) {
-        return url.matches("http[s]://maps\\.google\\.[a-z]{2,3}(\\.[a-z]{2})?[/?].*") ||
-                url.matches("http[s]://www\\.google\\.[a-z]{2,3}(\\.[a-z]{2})?/maps.*");
+    public static boolean isSupportedMapsURL(String url, Context context) {
+        if (url.matches("http[s]://maps\\.google\\.[a-z]{2,3}(\\.[a-z]{2})?[/?].*") ||
+                url.matches("http[s]://www\\.google\\.[a-z]{2,3}(\\.[a-z]{2})?/maps.*")) {
+            try {
+                // Desktop maps URLs changed to /preview; only GMM 7.6+ understands these
+                PackageManager pm = context.getPackageManager();
+                PackageInfo info = pm.getPackageInfo(GMM_PACKAGE_NAME, 0);
+                if (info != null && info.versionCode >= 706000000) {
+                    return true;
+                }
+            } catch (PackageManager.NameNotFoundException e) { }
+        }
+        return false;
     }
 
     public static boolean isYouTubeURL(String url) {
