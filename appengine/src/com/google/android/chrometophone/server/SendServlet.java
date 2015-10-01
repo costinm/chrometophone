@@ -16,26 +16,33 @@
 
 package com.google.android.chrometophone.server;
 
-import com.google.android.c2dm.server.C2DMessaging;
 import com.google.android.gcm.server.Constants;
 import com.google.android.gcm.server.Message;
 import com.google.android.gcm.server.Message.Builder;
 import com.google.android.gcm.server.Result;
+import com.google.android.gcm.server.Sender;
 import com.google.appengine.api.channel.ChannelMessage;
 import com.google.appengine.api.channel.ChannelServiceFactory;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+/**
+ * Send a GCM message to multiple devices.
+ *
+ *
+ */
 @SuppressWarnings("serial")
 public class SendServlet extends HttpServlet {
     static final Logger log =
-        Logger.getLogger(SendServlet.class.getName());
+            Logger.getLogger(SendServlet.class.getName());
     private static final String OK_STATUS = "OK";
     private static final String DEVICE_NOT_REGISTERED_STATUS = "DEVICE_NOT_REGISTERED";
     private static final String ERROR_STATUS = "ERROR";
@@ -46,8 +53,8 @@ public class SendServlet extends HttpServlet {
     public void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         resp.setContentType("text/plain");
 
-        RequestInfo reqInfo = RequestInfo.processRequest(req, resp,
-                getServletContext());
+        // Authenticate and fetch DeviceInfo
+        RequestInfo reqInfo = RequestInfo.processRequest(req, resp, getServletContext());
         if (reqInfo == null) {
             return;
         }
@@ -81,16 +88,26 @@ public class SendServlet extends HttpServlet {
         }
         resp.getWriter().println(id);
     }
-    
+
+    static Sender getSender(ServletContext ctx) {
+        Sender sender = (Sender) ctx.getAttribute(Sender.class.getName());
+        if (sender == null) {
+            Config config = Storage.get(ctx).getConfig();
+            sender = new Sender(config.getAuthToken());
+            ctx.setAttribute(Sender.class.getName(), sender);
+        }
+        return sender;
+    }
+
     protected String doSendToDevice(String url, String title,
-            String sel, RequestInfo reqInfo,
-            String deviceNames[], String deviceType) throws IOException {
+                                    String sel, RequestInfo reqInfo,
+                                    String deviceNames[], String deviceType) throws IOException {
 
         // ok = we sent to at least one device.
         boolean ok = false;
 
         // Send push message to phone
-        C2DMessaging push = C2DMessaging.get(getServletContext());
+        Sender sender = getSender(getServletContext());
         Object res = null;
 
         String collapseKey = "" + url.hashCode();
@@ -101,7 +118,7 @@ public class SendServlet extends HttpServlet {
         Iterator<DeviceInfo> iterator = reqInfo.devices.iterator();
         while (iterator.hasNext()) {
             DeviceInfo deviceInfo = iterator.next();
-            if (!DeviceInfo.TYPE_CHROME.equals(deviceInfo.getType())) {
+            if (!DeviceInfo.TYPE_CHROME.equals(deviceInfo.getType()) && !DeviceInfo.TYPE_CHROME2.equals(deviceInfo.getType())) {
                 deviceCount++;
             }
             if (deviceNames != null) {
@@ -121,9 +138,11 @@ public class SendServlet extends HttpServlet {
 
             if (deviceInfo.getType().equals(DeviceInfo.TYPE_CHROME)) {
                 res = doSendViaBrowserChannel(url, deviceInfo);
+            } else if (deviceInfo.getType().equals(DeviceInfo.TYPE_CHROME)) {
+                // TODO: for CHROME2 - use webpush or GCM
             } else {
-              res = doSendViaGoogleCloud(url, title, sel, push, collapseKey,
-                  deviceInfo, reqDebug, deviceInfo.getType());
+                res = doSendViaGoogleCloud(url, title, sel, sender, collapseKey,
+                        deviceInfo, reqDebug, deviceInfo.getType());
             }
 
             if (res instanceof Boolean) {
@@ -133,46 +152,47 @@ public class SendServlet extends HttpServlet {
                 log.fine("Non-boolean send result: " + res);
                 // C2DM error
                 if (res instanceof IOException) {
-                  IOException ex = (IOException) res;
-                  log.warning("Error: Unable to send link to device: " +
-                  deviceInfo.getDeviceRegistrationID());
-                  String error = "" + ex.getMessage();
-                  if (error.equals(Constants.ERROR_NOT_REGISTERED) || error.equals(Constants.ERROR_INVALID_REGISTRATION)) {
-                    // Prune device, it no longer works
-                    reqInfo.deleteRegistration(deviceInfo.getDeviceRegistrationID(),
-                        deviceInfo.getType());
-                    iterator.remove();
-                    deviceCount--;
-                  } else {
-                    throw ex;
-                  }
+                    IOException ex = (IOException) res;
+                    log.warning("Error: Unable to send link to device: " +
+                            deviceInfo.getDeviceRegistrationID());
+                    String error = "" + ex.getMessage();
+                    if (error.equals(Constants.ERROR_NOT_REGISTERED) || error.equals(Constants.ERROR_INVALID_REGISTRATION)) {
+                        // Prune device, it no longer works
+                        reqInfo.deleteRegistration(deviceInfo.getDeviceRegistrationID(),
+                                deviceInfo.getType());
+                        iterator.remove();
+                        deviceCount--;
+                    } else {
+                        throw ex;
+                    }
                 }
                 // GCM result.
                 if (res instanceof Result) {
-                  log.info("GCM send result: " + res);
-                  Result result = (Result) res;
-                  String regId = deviceInfo.getDeviceRegistrationID();
-                  if (result.getMessageId() != null) {
-                    ok = true;
-                    String canonicalRegId = result.getCanonicalRegistrationId();
-                    if (canonicalRegId != null) {
-                      // same device has more than on registration id: update it
-                      log.finest("canonicalRegId " + canonicalRegId);
-                      reqInfo.updateRegistration(regId, canonicalRegId);
-                    }
-                  } else {
-                    String error = result.getErrorCodeName();
-                    if (error.equals(Constants.ERROR_NOT_REGISTERED) || error.equals(Constants.ERROR_INVALID_REGISTRATION)) {
-                      // Prune device, it no longer works
-                      reqInfo.deleteRegistration(regId, deviceInfo.getType());
-                      iterator.remove();
-                      deviceCount--;
+                    log.info("GCM send result: " + res);
+                    Result result = (Result) res;
+                    String regId = deviceInfo.getDeviceRegistrationID();
+                    if (result.getMessageId() != null) {
+                        ok = true;
+                        String canonicalRegId = result.getCanonicalRegistrationId();
+                        if (canonicalRegId != null) {
+                            // same device has more than on registration id: update it
+                            log.finest("canonicalRegId " + canonicalRegId);
+                            Storage.get(getServletContext()).updateRegistration(reqInfo.userName,
+                                    regId, canonicalRegId);
+                        }
                     } else {
-                      log.severe("Error sending message to device " + regId
-                          + ": " + error);
-                      throw new IOException(error);
+                        String error = result.getErrorCodeName();
+                        if (error.equals(Constants.ERROR_NOT_REGISTERED) || error.equals(Constants.ERROR_INVALID_REGISTRATION)) {
+                            // Prune device, it no longer works
+                            reqInfo.deleteRegistration(regId, deviceInfo.getType());
+                            iterator.remove();
+                            deviceCount--;
+                        } else {
+                            log.severe("Error sending message to device " + regId
+                                    + ": " + error);
+                            throw new IOException(error);
+                        }
                     }
-                  }
                 }
             }
         }
@@ -193,8 +213,8 @@ public class SendServlet extends HttpServlet {
         }
     }
 
-    private Object doSendViaGoogleCloud(String url, String title, String sel, C2DMessaging push,
-            String collapseKey, DeviceInfo deviceInfo, boolean reqDebug, String deviceType) {
+    private Object doSendViaGoogleCloud(String url, String title, String sel, Sender push,
+                                        String collapseKey, DeviceInfo deviceInfo, boolean reqDebug, String deviceType) {
 
         // Trim title, sel if needed.
         if (url.length() + title.length() + sel.length() > 1000) {
@@ -217,25 +237,34 @@ public class SendServlet extends HttpServlet {
         Object res;
         if (deviceInfo.isC2DM()) {
             log.fine("Sending C2DM message");
-            res = push.sendNoRetry(regId,
-                  collapseKey,
-                  "url", url,
-                  "title", title,
-                  "sel", sel,
-                  "debug", debug);
+            res = C2DMessaging.sendNoRetry(
+                    Storage.get(getServletContext()),
+                    regId,
+                    collapseKey,
+                    "url", url,
+                    "title", title,
+                    "sel", sel,
+                    "debug", debug);
         } else {
             log.fine("Sending GCM message");
             Builder builder = new Message.Builder()
-                .collapseKey(collapseKey)
-                .addData("url", url)
-                .addData("title", title)
-                .addData("sel", sel);
+                    .collapseKey(collapseKey)
+                    .addData("url", url)
+                    .addData("title", title)
+                    .addData("sel", sel);
             if (debug != null) {
-              builder.addData("debug", debug);
+                builder.addData("debug", debug);
             }
             Message message = builder.build();
-            res = push.sendGcmMessage(message, regId);
+            try {
+                res = push.send(message, regId, 2 /* retries */);
+            } catch (IOException e) {
+                log.log(Level.SEVERE, "Error sending " + message + " to " + regId, e);
+                return null;
+            }
+
         }
+
         return res;
     }
 

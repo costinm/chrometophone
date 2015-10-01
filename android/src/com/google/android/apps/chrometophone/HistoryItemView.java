@@ -32,7 +32,7 @@ public class HistoryItemView extends LinearLayout {
 
     public void setUrl(String url) {
         int id = R.drawable.history_browser_item_indicator;
-        if (LauncherUtils.isMapsURL(url)) {
+        if (LauncherUtils.isSupportedMapsURL(url, mContext)) {
             id = R.drawable.history_maps_item_indicator;
         } else if (LauncherUtils.isYouTubeURL(url)) {
             id = R.drawable.history_yt_item_indicator;

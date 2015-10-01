@@ -171,21 +171,16 @@ public final class Prefs {
 
             // Do the dance to get the DER-encoded certificate,
             try {
+                /*
                 InputStream input = new ByteArrayInputStream(certB);
                 CertificateFactory cf = CertificateFactory.getInstance("X509");
                 X509Certificate c = (X509Certificate) cf.generateCertificate(input);
-
-                System.out.println("Orig: " +
-                        byte2HexFormatted(certB));
-                System.out.println("Encoded: " +
-                        byte2HexFormatted(c.getEncoded()));
-
+                certB == c.getEncoded()
+                */
                 MessageDigest md = MessageDigest.getInstance("SHA1");
-                byte[] publicKey = md.digest(c.getEncoded());
+                byte[] publicKey = md.digest(certB);
                 cert = byte2HexFormatted(publicKey);
-
-                System.out.println("SHA1: " + cert);
-            } catch (CertificateException|NoSuchAlgorithmException e) {
+            } catch (NoSuchAlgorithmException e) {
                 e.printStackTrace();
                 return "";
             }

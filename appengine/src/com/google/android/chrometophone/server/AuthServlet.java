@@ -16,6 +16,9 @@
 
 package com.google.android.chrometophone.server;
 
+import com.google.appengine.api.users.UserService;
+import com.google.appengine.api.users.UserServiceFactory;
+
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.util.logging.Logger;
@@ -24,15 +27,10 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.google.appengine.api.users.UserService;
-import com.google.appengine.api.users.UserServiceFactory;
-
 /**
  * Handles login/logout requests by redirecting to the cookie-based login page.
  * Has logic to handle redirect limitations, the redirect URL can't be a chrome
  * URL. 
- * 
- * Not needed if OAuth1 is used.  
  */
 @SuppressWarnings("serial")
 public class AuthServlet extends HttpServlet {

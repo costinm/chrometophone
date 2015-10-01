@@ -1,5 +1,5 @@
 /*
- * Copyright 2010 Google Inc.
+ * Copyright 2015 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,68 +14,66 @@
  * limitations under the License.
  */
 
-var apiVersion = 6;
-
-var deviceRegistrationId = localStorage['deviceRegistrationId'];
-if (deviceRegistrationId == undefined || deviceRegistrationId == null) {
-  deviceRegistrationId = (Math.random() + '').substring(3);
-  localStorage['deviceRegistrationId'] = deviceRegistrationId;
-}
+var apiVersion = 7;
 
 // For dev purpose can be changed to custom server or specific version,
 // use javascript console
-var host = localStorage['c2dmHost'];
-if (host == undefined) {
+var baseUrl = localStorage['chrometophoneUrl'];
+if (baseUrl == undefined) {
   // This won't work very well if the URL is x.chrometophone.appspot.com,
-  // there is a cert validation issue (cert is for *.appspot.com ), 
+  // there is a cert validation issue (cert is for *.appspot.com ),
   // workaround is to open the URL in the browser and accept the cert
   // warnings.
-  host = "chrometophone.appspot.com";
+  //baseUrl = "https://chrometophone.appspot.com";
+  //baseUrl = "https://datamessaging.appspot.com";
+  baseUrl = "http://localhost:8080";
 }
-var baseUrl = 'https://' + host;
-var sendUrl = baseUrl + '/send?ver=' + apiVersion;
-
-var registerUrl =  baseUrl + '/register?ver=' + apiVersion;
 
 var STATUS_SUCCESS = 'success';
 var STATUS_LOGIN_REQUIRED = 'login_required';
 var STATUS_DEVICE_NOT_REGISTERED = 'device_not_registered';
 var STATUS_GENERAL_ERROR = 'general_error';
 
-var oauth = ChromeExOAuth.initBackgroundPage({
-    'request_url' : baseUrl + '/_ah/OAuthGetRequestToken',
-    'authorize_url' : baseUrl + '/_ah/OAuthAuthorizeToken',
-    'access_url' : baseUrl + '/_ah/OAuthGetAccessToken',
-    'consumer_key' : 'anonymous',
-    'consumer_secret' : 'anonymous',
-    'scope' : baseUrl,
-    'app_name' : 'Chrome To Phone'
-});
-
-var channel;
-var socket;
-var socketCloseRequested;
-
+/** Main logic to send the link.
+    Must be called in extension context - either in background page
+    or from popup.js.
+ */
 function sendToPhone(title, url, msgType, selection, listener) {
-  if (oauth.hasToken()) {
+  if (localStorage['token']) {
+    // Account+deviceRegistrationId is the key
+    // Server will verify the token
     var params = {
       "title": title,
-      "url": url, 
+      "url": url,
       "sel": selection,
       "type": msgType,
-      "deviceType":"ac2dm",
-      "debug": "1",
-      "token": localStorage['deviceRegistrationId'] 
+      "deviceType": "ac2dm",
+      "ver": apiVersion,
+      "devregid": localStorage['deviceRegistrationId'], // This will be Webpush or chrome extension regid
+      "account": localStorage['account'],
+      "deviceId": localStorage['token']
     };
-    
-    // No longer passing device name - this may be customized
-    var data = JSON.stringify(params);
-    oauth.sendSignedRequest(baseUrl + "/send", function(responseText, req) {
+
+    send(baseUrl + "/send", params, listener);
+  } else {
+    listener(STATUS_LOGIN_REQUIRED, "Login required");
+  }
+
+}
+
+function send(serverUrl, params, listener) {
+  var data = JSON.stringify(params);
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function(data) {
+    if (xhr.readyState == 4) {
+      var req = xhr;
+      var responseText = xhr.responseText;
       if (req.status == 200) {
         var body = req.responseText;
         if (body.indexOf('OK') == 0) {
           listener(STATUS_SUCCESS, "");
         } else if (body.indexOf('LOGIN_REQUIRED') == 0) {
+          localStorage.removeItem("token"); // to avoid trying again
           listener(STATUS_LOGIN_REQUIRED, responseText);
         } else if (body.indexOf('DEVICE_NOT_REGISTERED') == 0) {
           listener(STATUS_DEVICE_NOT_REGISTERED, responseText);
@@ -83,94 +81,17 @@ function sendToPhone(title, url, msgType, selection, listener) {
       } else {
         listener(STATUS_GENERAL_ERROR, responseText);
       }
-    }, {
-        'method': 'POST',
-        'body': data,
-        'headers': {
-          'X-Same-Domain': 'true',
-          'Content-Type': 'application/json;charset=UTF-8'  
-        }
-      });
-      return;
-    } else {
-      listener(STATUS_LOGIN_REQUIRED, "Login required");
     }
-}
-
-function initializeBrowserChannel() {
-  // Disabled pending more QA
-  return;
-
-  if (!oauth.hasToken()) {
-    console.log('Login required for initializeBrowserChannel');
-    return;
   }
-
-  console.log(new Date().toTimeString() + ' Initializing browser channel');
-  socketCloseRequested = false;
-  var params = {
-    "devregid": deviceRegistrationId,
-    "deviceId": deviceRegistrationId,
-    "ver": apiVersion,
-    "deviceType": "chrome",
-    "debug":"1",
-    "deviceName":"Chrome"
-  };
-  var data = JSON.stringify(params);
-  
-  oauth.sendSignedRequest(baseUrl + "/register", function(responseText, req) {
-    if (req.status == 200) {
-      var channelId = req.responseText.substring(3).trim();  // expect 'OK <id>';
-      channel = new goog.appengine.Channel(channelId);
-      console.log(new Date().toTimeString() + ' Opening channel...');
-      socket = channel.open();
-      socket.onopen = function() {
-        console.log(new Date().toTimeString() + ' Browser channel initialized');
-      }
-      socket.onclose = function() {
-        console.log(new Date().toTimeString() + ' Browser channel closed');
-        if (!socketCloseRequested) {
-          console.log(new Date().toTimeString() + ' Reconnecting...');
-          setTimeout('initializeBrowserChannel()', 0);
-        } 
-      }
-      socket.onerror = function(error) {
-        if (error.code == 401) {  // token expiry
-          console.log(new Date().toTimeString() + ' Browser channel token expired');
-        } else {
-          console.log(new Date().toTimeString() + ' Browser channel error');
-          socket.close();
-        }
-        // Reconnects in onclose()
-      }
-      socket.onmessage = function(evt) {
-        console.log("Onmessage " + evt.data);
-        var url = unescape(evt.data);
-        var regex = /http[s]?:\/\//;
-        if (regex.test(url)) { 
-          chrome.tabs.create({url: url})
-        }
-      }
-    } else if (req.status == 400) {
-      if (req.responseText.indexOf('LOGIN_REQUIRED') == 0) {
-        console.log(new Date().toTimeString() + ' Not initializing browser channel because user not logged in');
-      }
-    } else {  // server not happy, random backoff
-      var delay = Math.round(Math.random() * 20000);
-      console.log(new Date().toTimeString() + ' Failed to register browser channel (' + req.status + '), retrying in ' + delay + 'ms');
-      setTimeout('initializeBrowserChannel()', delay);
+  xhr.open('POST', serverUrl, true);
+  var headers = {
+    'X-Same-Domain': 'true',
+    'Content-Type': 'application/json;charset=UTF-8',
+  }
+  for (var header in headers) {
+    if (headers.hasOwnProperty(header)) {
+      xhr.setRequestHeader(header, headers[header]);
     }
-  }, {
-      'method': 'POST',
-      'body': data,
-      'headers': {
-        'X-Same-Domain': 'true',
-        'Content-Type': 'application/json'  
-      }
-  });
-}
-
-function closeBrowserChannel() {
-  socketCloseRequested = true;
-  if (socket) socket.close();
+  }
+  xhr.send(data);
 }

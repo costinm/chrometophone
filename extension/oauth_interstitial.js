@@ -5,7 +5,6 @@ window.onload = function() {
     if (params['chromeexoauthcallback'] == 'true') {
       // End of the oauth request flow, get access token
       oauth.initOAuthFlow(function(token, secret) {
-        chrome.extension.getBackgroundPage().initializeBrowserChannel();
         window.location = 'help.html#just_signed_in';
       });
     } else {

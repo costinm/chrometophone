@@ -24,6 +24,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -336,9 +337,14 @@ public class SetupActivity extends Activity implements Handler.Callback {
 
         final String account = Prefs.getPrefs(SetupActivity.this).getAccount();
 
+        // Will force update if < 7.5. Client library needs to be queso to get IID API,
+        // but we can fall back up to ICS.
         boolean hasPlayServices = true;
         try {
-            getPackageManager().getPackageInfo("com.google.android.gms", 0);
+            PackageInfo pi = getPackageManager().getPackageInfo("com.google.android.gms", 0);
+            if (pi.versionCode < 7500000) {
+                hasPlayServices = false; // use AccountManager, even if gms is present
+            }
         } catch (PackageManager.NameNotFoundException e) {
             hasPlayServices = false;
         }
@@ -373,7 +379,6 @@ public class SetupActivity extends Activity implements Handler.Callback {
             }).start();
         } else {
             // Play services not available - ICS to JB MR2. Use AccountManager
-
 
             AccountManager.get(this).getAuthToken(new Account(account, "com.google"),
                     scope, null, this,

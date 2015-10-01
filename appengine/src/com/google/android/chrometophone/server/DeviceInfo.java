@@ -18,12 +18,9 @@ package com.google.android.chrometophone.server;
 
 import com.google.appengine.api.datastore.Key;
 
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 
-import javax.jdo.PersistenceManager;
-import javax.jdo.Query;
+import javax.jdo.annotations.Extension;
 import javax.jdo.annotations.IdentityType;
 import javax.jdo.annotations.PersistenceCapable;
 import javax.jdo.annotations.Persistent;
@@ -43,6 +40,9 @@ public class DeviceInfo {
     public static final String TYPE_AC2DM = "ac2dm";
     public static final String TYPE_CHROME = "chrome";
 
+    // Chrome with new auth scheme
+    public static final String TYPE_CHROME2 = "chrome2";
+
     /**
      * User-email # device-id
      *
@@ -56,11 +56,12 @@ public class DeviceInfo {
     private Key key;
 
     /**
-     * The ID used for sending messages to.
+     * The ID used for sending messages to. Indexed.
      */
     @Persistent
     private String deviceRegistrationID;
 
+    // TODO: unindex
     /**
      * Current supported types:
      *   (default) - ac2dm, regular froyo+ devices using C2DM protocol
@@ -74,8 +75,10 @@ public class DeviceInfo {
      * Friendly name for the device. May be edited by the user.
      */
     @Persistent
+    @Extension(vendorName="datanucleus", key="gae.unindexed", value="true")
     private String name;
 
+    // TODO: unindex
     /**
      * For statistics - and to provide hints to the user.
      */
@@ -83,11 +86,14 @@ public class DeviceInfo {
     private Date registrationTimestamp;
 
     @Persistent
+    @Extension(vendorName="datanucleus", key="gae.unindexed", value="true")
     private Boolean debug;
 
+    // TODO: unindex
     /**
      * Devices that migrated to GCM will have it set to true; older devices
      * will have it either null or false.
+     * Since ClientLogin is deprecated, send will use a special auth token.
      */
     @Persistent
     private Boolean gcm;
@@ -164,32 +170,5 @@ public class DeviceInfo {
         return registrationTimestamp;
     }
 
-    /**
-     * Helper function - will query all registrations for a user.
-     */
-    public static List<DeviceInfo> getDeviceInfoForUser(PersistenceManager pm, String user) {
-        Query query = pm.newQuery(DeviceInfo.class);
-        query.setFilter("key >= '" +
-                user + "' && key < '" + user + "$'");
-        @SuppressWarnings("unchecked")
-        List<DeviceInfo> qresult = (List<DeviceInfo>) query.execute();
-        // Copy to array - we need to close the query
-        List<DeviceInfo> result = new ArrayList<DeviceInfo>();
-        for (DeviceInfo di : qresult) {
-            result.add(di);
-        }
-        query.closeAll();
-        return result;
-    }
-
-    public static DeviceInfo getDeviceInfo(PersistenceManager pm, String regId) {
-      Query query = pm.newQuery(DeviceInfo.class);
-      query.setFilter("deviceRegistrationID == '" + regId + "'");
-      @SuppressWarnings("unchecked")
-      List<DeviceInfo> result = (List<DeviceInfo>) query.execute();
-      DeviceInfo deviceInfo = (result == null || result.isEmpty()) ? null : result.get(0);
-      query.closeAll();
-      return deviceInfo;
-    }
 
 }

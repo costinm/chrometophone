@@ -2,43 +2,44 @@
  */
 package com.google.android.chrometophone.server;
 
+import com.google.appengine.api.oauth.OAuthService;
+import com.google.appengine.api.oauth.OAuthServiceFactory;
+import com.google.appengine.api.users.User;
+import com.google.appengine.api.users.UserService;
+import com.google.appengine.api.users.UserServiceFactory;
+
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Reader;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.jdo.JDOObjectNotFoundException;
-import javax.jdo.PersistenceManager;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.google.android.c2dm.server.C2DMessaging;
-import com.google.appengine.api.datastore.Key;
-import com.google.appengine.api.oauth.OAuthService;
-import com.google.appengine.api.oauth.OAuthServiceFactory;
-import com.google.appengine.api.users.User;
-import com.google.appengine.api.users.UserService;
-import com.google.appengine.api.users.UserServiceFactory;
-import com.google.appengine.labs.repackaged.org.json.JSONException;
-import com.google.appengine.labs.repackaged.org.json.JSONObject;
-
 /**
  * Common code and helpers to handle a request and manipulate device info.
- *
  */
 public class RequestInfo {
     private static final Logger log =
-        Logger.getLogger(RequestInfo.class.getName());
+            Logger.getLogger(RequestInfo.class.getName());
     private static final String ERROR_STATUS = "ERROR";
     private static final String LOGIN_REQUIRED_STATUS = "LOGIN_REQUIRED";
 
     public List<DeviceInfo> devices = new ArrayList<DeviceInfo>();
 
     public String userName;
+    public String unauthenticatedAccount;
 
     private ServletContext ctx;
     public String deviceRegistrationID;
@@ -53,6 +54,8 @@ public class RequestInfo {
         return userName != null;
     }
 
+    static String[] NO_AUTH_TYPE_TOKEN = new String[0];
+
     /**
      * Authenticate the user, check headers and pull the registration data.
      *
@@ -60,7 +63,7 @@ public class RequestInfo {
      * @throws IOException
      */
     public static RequestInfo processRequest(HttpServletRequest req,
-            HttpServletResponse resp, ServletContext ctx) throws IOException {
+                                             HttpServletResponse resp, ServletContext ctx) throws IOException {
 
         // Basic XSRF protection
         if (req.getHeader("X-Same-Domain") == null) {
@@ -70,28 +73,8 @@ public class RequestInfo {
             return null;
         }
 
-        User user = null;
         RequestInfo ri = new RequestInfo();
-        ri.ctx= ctx;
-        OAuthService oauthService = OAuthServiceFactory.getOAuthService();
-        try {
-            user = oauthService.getCurrentUser();
-            if (user != null) {
-                ri.userName = user.getEmail();
-            }
-        } catch (Throwable t) {
-            log.log(Level.INFO, "Non-OAuth request");
-            user = null;
-        }
-
-        if (user == null) {
-            // Try ClientLogin
-            UserService userService = UserServiceFactory.getUserService();
-            user = userService.getCurrentUser();
-            if (user != null) {
-                ri.userName = user.getEmail();
-            }
-        }
+        ri.ctx = ctx;
 
         if (req.getContentType().startsWith("application/json")) {
             Reader reader = req.getReader();
@@ -106,8 +89,12 @@ public class RequestInfo {
                 body.append(tmp, 0, cnt);
             }
             try {
-                ri.jsonParams = new JSONObject(body.toString());
-            } catch (JSONException e) {
+                ri.jsonParams = (JSONObject) new JSONParser().parse(body.toString());
+                //new JSONObject(body.toString());
+                //} catch (JSONException e) {
+                //    resp.setStatus(500);
+                //    return null;
+            } catch (ParseException e) {
                 resp.setStatus(500);
                 return null;
             }
@@ -115,6 +102,10 @@ public class RequestInfo {
             @SuppressWarnings("unchecked")
             Map<String, String[]> castMap = req.getParameterMap();
             ri.parameterMap = castMap;
+        }
+
+        if (!ri.authenticate(req, resp)) {
+            return null;
         }
 
         ri.deviceRegistrationID = ri.getParameter("devregid");
@@ -125,33 +116,166 @@ public class RequestInfo {
             }
         }
 
-        if (ri.userName == null) {
-            resp.setStatus(200);
-            resp.getWriter().println(LOGIN_REQUIRED_STATUS);
-            log.info("Missing user, login required");
-            return null;
-        }
-
-        // check if account was really set on development environment
-        if (ri.userName.endsWith("@example.com")) {
-          String account = req.getParameter("account");
-          if (account != null) {
-            log.log(Level.INFO, "Using " + account + " instead of " + ri.userName);
-            ri.userName = account;
-          }
-        }
-
+        // Load data from DB
         if (ctx != null) {
             ri.initDevices(ctx);
         }
 
-
+        // Verify the saved device info exists and matches what was sent
+        if (!postAuthenticate(req, resp, ri)) {
+            return null;
+        }
         return ri;
+    }
+
+    /**
+     * Storage key, based on account and hash of 'deviceId' parameter.
+     *
+     *
+     */
+    public String getKey() {
+        // Old version: deviceId was a random generated by chrome, and
+        // the AndroidId. Keep accepting it for older phone versions.
+        String deviceId = getParameter("deviceId");
+
+        // New version: use instanceID, or the registrationID for old chrome
+        if (deviceId == null && deviceRegistrationID != null) {
+            String[] regidComponents = deviceRegistrationID.split(":");
+            if (regidComponents.length > 0) {
+                // First part of the IID should be as stable as the android ID
+                deviceId = regidComponents[0];
+            }
+        }
+        if (deviceId == null ||
+                (userName == null && unauthenticatedAccount == null)) {
+            return null;
+        }
+        return ((userName == null) ? unauthenticatedAccount : userName) +
+                "#" +
+                Long.toHexString(Math.abs(deviceId.hashCode()));
+    }
+
+    /**
+     * For requests not authenticated with JWT token (from android)
+     * or OAuth2 (chrome), fall back to checking the InstanceID/
+     * registrationID.
+     */
+    private static boolean postAuthenticate(HttpServletRequest req, HttpServletResponse resp, RequestInfo ri) throws IOException {
+        if (ri.unauthenticatedAccount != null) {
+            // Find the device.
+            for (DeviceInfo device: ri.devices) {
+                String regid = ri.deviceRegistrationID;
+                if (regid.equals(device.getDeviceRegistrationID())) {
+                    // Found the device, regid matches - same device
+                    ri.userName = ri.unauthenticatedAccount;
+                    return true;
+                }
+            }
+
+            resp.setStatus(200);
+            resp.getWriter().println(LOGIN_REQUIRED_STATUS);
+            log.info("Missing user, login required");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean authenticate(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String user = null;
+        // Android: JWT token
+        if (user == null) {
+            String authorization = req.getHeader("Authorization");
+            String[] typeToken = (authorization == null) ? NO_AUTH_TYPE_TOKEN : authorization.split(" ");
+            if (typeToken.length == 2) {
+                user = checkIdToken(typeToken[1]);
+                if (user != null) {
+                    log.info("Got user " + user + " " + typeToken[0]);
+                }
+            }
+        }
+        // New chrome: OAuth2 token for registration/send
+        if (user == null) {
+            String authParam = getParameter("auth");
+            if (authParam != null) {
+                // GoogleLogin in chrome extension or webpush page
+                user = checkIdToken(authParam);
+
+                // TODO: populate a refresh token, and check it periodically
+                // for the case permission is revoked or account disabled
+                // This will require a cron job or some notifications
+            }
+        }
+        // Chrome: user + deviceID + chrome token (will be chrome GCM regid)
+        if (user == null) {
+            unauthenticatedAccount = getParameter("account");
+            if (unauthenticatedAccount != null) {
+                return true; // Will be authenticated after loading devices
+            }
+        }
+
+        if (user == null) {
+            // Old style - will stop working when Oauth1 is killed
+            user = legacyAppengineAuth();
+        }
+
+        if (user != null) {
+            userName = user;
+        } else {
+            resp.setStatus(200);
+            resp.getWriter().println(LOGIN_REQUIRED_STATUS);
+            log.info("Missing user, login required");
+            return false;
+        }
+        return true;
+    }
+
+    private static String legacyAppengineAuth() {
+        User appengineUser = null;
+        // Legacy - will be shut down soon.
+        OAuthService oauthService = OAuthServiceFactory.getOAuthService();
+        try {
+            appengineUser = oauthService.getCurrentUser();
+            log.log(Level.INFO, "Registered with getCurrentUser() " + appengineUser);
+        } catch (Throwable t) {
+            // Try next scope
+        }
+
+
+        if (appengineUser == null){
+            // Try ClientLogin
+            UserService userService = UserServiceFactory.getUserService();
+            appengineUser = userService.getCurrentUser();
+        }
+
+        return (appengineUser == null) ? null: appengineUser.getEmail();
+    }
+
+    /**
+     * Process a id_token, access_token or token_handle, by using the tokeninfo
+     * endpoint
+     */
+    private static String checkIdToken(String authParam) {
+        try {
+            URL url = new URL("https://www.googleapis.com/oauth2/v3/tokeninfo?id_token="
+                + authParam);
+            InputStream is = url.openConnection().getInputStream();
+            JSONObject obj = (JSONObject) new JSONParser().parse(new InputStreamReader(is));
+
+            log.info("Got: "  + obj.toJSONString());
+
+            return (String) obj.get("email");
+        } catch (IOException e) {
+            log.log(Level.WARNING, "Error checking id token", e);
+            return null;
+        } catch (ParseException e) {
+            log.log(Level.WARNING, "Error checking id token " + authParam, e);
+            return null;
+        }
     }
 
     public String getParameter(String name) {
         if (jsonParams != null) {
-            return jsonParams.optString(name, null);
+            return (String) jsonParams.get(name);
         } else {
             String res[] = parameterMap.get(name);
             if (res == null || res.length == 0) {
@@ -162,7 +286,7 @@ public class RequestInfo {
     }
 
     /**
-     *  Authenticate using the req, fetch devices.
+     * Authenticate using the req, fetch devices.
      */
     private RequestInfo() {
     }
@@ -174,79 +298,21 @@ public class RequestInfo {
 
     public RequestInfo(String userN, ServletContext ctx) {
         this.userName = userN;
-        this.ctx= ctx;
+        this.ctx = ctx;
         if (ctx != null) {
             initDevices(ctx);
         }
     }
 
     private void initDevices(ServletContext ctx) {
-        // Context-shared PMF.
-        PersistenceManager pm =
-            C2DMessaging.getPMF(ctx).getPersistenceManager();
-
-        try {
-            devices = DeviceInfo.getDeviceInfoForUser(pm,
-                    userName);
-            // cleanup for multi-device
-            if (devices.size() > 1) {
-                // Make sure there is no 'bare' registration
-                // Keys are sorted - check the first
-                DeviceInfo first = devices.get(0);
-                Key oldKey = first.getKey();
-                if (oldKey.toString().indexOf("#") < 0) {
-                    log.warning("Removing old-style key " + oldKey.toString());
-                    // multiple devices, first is old-style.
-                    devices.remove(0);
-                    pm.deletePersistent(first);
-                }
-            }
-        } catch (Exception e) {
-            log.log(Level.WARNING, "Error loading registrations ", e);
-        } finally {
-            pm.close();
-        }
-
+        devices = Storage.get(ctx).loadDevices(
+                userName != null ? userName : unauthenticatedAccount);
     }
 
     // We need to iterate again - can be avoided with a query.
     // delete will fail if the pm is different than the one used to
     // load the object - we must close the object when we're done
     public void deleteRegistration(String regId, String type) {
-        if (ctx == null) {
-            return;
-        }
-        PersistenceManager pm =
-            C2DMessaging.getPMF(ctx).getPersistenceManager();
-        try {
-            List<DeviceInfo> registrations = DeviceInfo.getDeviceInfoForUser(pm, userName);
-            for (int i = 0; i < registrations.size(); i++) {
-                DeviceInfo deviceInfo = registrations.get(i);
-                if (deviceInfo.getDeviceRegistrationID().equals(regId)) {
-                    pm.deletePersistent(deviceInfo);
-                    // Keep looping in case of duplicates
-                }
-            }
-        } catch (JDOObjectNotFoundException e) {
-            log.warning("User unknown");
-        } catch (Exception e) {
-            log.warning("Error unregistering device: " + e.getMessage());
-        } finally {
-            pm.close();
-        }
-
-    }
-
-    public void updateRegistration(String regId, String canonicalRegId) {
-      if (ctx == null) {
-        return;
-      }
-      log.fine("Updating regId " + regId + " to canonical " + canonicalRegId);
-      PersistenceManager pm = C2DMessaging.getPMF(ctx).getPersistenceManager();
-      DeviceInfo device = DeviceInfo.getDeviceInfo(pm, regId);
-      device.setDeviceRegistrationID(canonicalRegId);
-      pm.currentTransaction().begin();
-      pm.makePersistent(device);
-      pm.currentTransaction().commit();
+        Storage.get(ctx).deleteRegistration(userName, regId, type);
     }
 }

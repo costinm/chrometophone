@@ -16,6 +16,12 @@
 
 package com.google.android.chrometophone.server;
 
+import com.google.appengine.api.xmpp.JID;
+import com.google.appengine.api.xmpp.Message;
+import com.google.appengine.api.xmpp.MessageBuilder;
+import com.google.appengine.api.xmpp.XMPPService;
+import com.google.appengine.api.xmpp.XMPPServiceFactory;
+
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.util.HashMap;
@@ -23,12 +29,6 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
-import com.google.appengine.api.xmpp.JID;
-import com.google.appengine.api.xmpp.Message;
-import com.google.appengine.api.xmpp.MessageBuilder;
-import com.google.appengine.api.xmpp.XMPPService;
-import com.google.appengine.api.xmpp.XMPPServiceFactory;
 
 /**
  * Receives XMPP messages sent to chrometophone@appspot.com or

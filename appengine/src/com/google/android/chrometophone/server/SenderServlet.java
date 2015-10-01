@@ -15,8 +15,6 @@
  */
 package com.google.android.chrometophone.server;
 
-import com.google.android.c2dm.server.C2DMessaging;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,7 +28,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.jdo.PersistenceManager;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -39,7 +36,7 @@ import javax.servlet.http.HttpServletResponse;
 /**
  * Sends a link to a device without using the Chrome extension.
  *
- * Useful for debugging purposes.
+ * Useful for debugging purposes, only by admin.
  */
 public class SenderServlet extends HttpServlet {
 
@@ -91,11 +88,11 @@ public class SenderServlet extends HttpServlet {
       String account = getParameter(req, PARAM_ACCOUNT);
       String url = getParameter(req, PARAM_URL);
       ServletContext ctx = getServletContext();
-      PersistenceManager pm = C2DMessaging.getPMF(ctx).getPersistenceManager();
       StringBuilder log = new StringBuilder();
       log.append("Getting devices for account ").append(account).append("<br>");
-      List<DeviceInfo> devices = DeviceInfo.getDeviceInfoForUser(pm, account);
-      pm.close();
+
+
+      List<DeviceInfo> devices = Storage.get(ctx).loadDevices(account);
       log.append("Number of devices found: ").append(devices.size()).append("<br>");
       for (DeviceInfo device : devices) {
         String type = device.getType();
