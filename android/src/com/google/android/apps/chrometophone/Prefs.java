@@ -68,8 +68,20 @@ public final class Prefs {
 
     public static final String IID = "iid";
 
+    /** Certificate used to signed the release. Configured on the chrometophone
+     *  dev console.
+     */
     public static final String PROD_CERT = "24bb24c05e47e0aefa68a58a766179d9b613a600";
+
+    /**
+     * Certificate matching the debug.keystore checked into the build.
+     * This can't be published to market, but will work for development.
+     *
+     * It is configured in the dev console for the corresponding DEV_SCOPE
+     * and DEV_URL.
+     */
     public static final String DEV_CERT = "FE51F95820CDE90B5334588B1F7666A1627180CE";
+
     private final SharedPreferences sharedPreferences;
     private final Context context;
 
