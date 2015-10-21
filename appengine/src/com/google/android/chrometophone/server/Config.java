@@ -38,22 +38,19 @@ public final class Config {
     @Persistent
     private Key key;
 
+    /**
+     * Api Key for sending to GCM
+     */
     @Persistent
     private String authToken;
 
+    /**
+     * C2DM - migrated key
+     */
     @Persistent
     private String legacyClientLogin;
 
     @Persistent
-    private String oauth2RefreshToken;
-    
-    @Persistent 
-    private String clientId;
-   
-    @Persistent 
-    private String clientSecret;
-
-    @Persistent 
     private String c2dmUrl;
 
     public String getAuthToken() {
@@ -63,35 +60,12 @@ public final class Config {
     public void setAuthToken(String authToken) {
         this.authToken = authToken;
     }
-    
+
+    /**
+     * Set the key for storage.
+     */
     public void setKey(Key key) {
         this.key = key;
-    }
-
-    public Key getKey() { return key; }
-
-    public void setOauth2RefreshToken(String oauth2RefreshToken) {
-        this.oauth2RefreshToken = oauth2RefreshToken;
-    }
-
-    public String getOauth2RefreshToken() {
-        return oauth2RefreshToken;
-    }
-
-    public void setOAuth2ClientId(String clientId) {
-        this.clientId = clientId;
-    }
-
-    public String getOAuth2ClientId() {
-        return clientId;
-    }
-
-    public void setOAuth2ClientSecret(String clientSecret) {
-        this.clientSecret = clientSecret;
-    }
-
-    public String getOAuth2ClientSecret() {
-        return clientSecret;
     }
 
     public String getLegacyClientLogin() { return legacyClientLogin;}
