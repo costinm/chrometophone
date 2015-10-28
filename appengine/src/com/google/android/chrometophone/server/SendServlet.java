@@ -71,7 +71,7 @@ public class SendServlet extends HttpServlet {
             resp.getWriter().println(ERROR_STATUS + " (Must specify url parameter)");
             return;
         }
-        logUrlType(url, sel);
+        String type = urlType(url, sel);
 
         String deviceName = reqInfo.getParameter("deviceName");
         String[] deviceNames = deviceName != null ?
@@ -92,7 +92,7 @@ public class SendServlet extends HttpServlet {
     static Sender getSender(ServletContext ctx) {
         Sender sender = (Sender) ctx.getAttribute(Sender.class.getName());
         if (sender == null) {
-            Config config = Storage.get(ctx).getConfig();
+            C2PConfig config = Storage.get(ctx).getConfig();
             sender = new Sender(config.getAuthToken());
             ctx.setAttribute(Sender.class.getName(), sender);
         }
@@ -275,7 +275,7 @@ public class SendServlet extends HttpServlet {
         return true;
     }
 
-    private void logUrlType(String url, String sel) {
+    private String urlType(String url, String sel) {
         String type = "link";  // default
         if (sel != null && sel.matches("([Tt]el[:]?)?\\s?[+]?(\\(?[0-9|\\s|\\-|\\.]\\)?)+")) {
             type = "phone number";
@@ -285,6 +285,6 @@ public class SendServlet extends HttpServlet {
         } else if (url.matches("http://www\\.youtube\\.[a-z]{2,3}(\\.[a-z]{2})?/.*")) {
             type = "YouTube";
         }
-        log.info("URL type: " + type);
+        return type;
     }
 }

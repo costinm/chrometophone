@@ -62,14 +62,14 @@ public class Storage {
         return storage;
     }
 
-    public Config getConfig() {
+    public C2PConfig getConfig() {
         PersistenceManager pm = getPMF(ctx).getPersistenceManager();
-        Key key = KeyFactory.createKey(Config.class.getSimpleName(), "default");
-        Config config = null;
+        Key key = KeyFactory.createKey(C2PConfig.class.getSimpleName(), "default");
+        C2PConfig config = null;
         try {
-            config = pm.getObjectById(Config.class, key);
+            config = pm.getObjectById(C2PConfig.class, key);
         } catch (JDOObjectNotFoundException e) {
-            config = new Config();
+            config = new C2PConfig();
             config.setKey(key);
 
             // First invocation or in local test mode
@@ -103,7 +103,7 @@ public class Storage {
         return config;
     }
 
-    public void saveConfig(Config cfg) {
+    public void saveConfig(C2PConfig cfg) {
         PersistenceManager pm = getPMF(ctx).getPersistenceManager();
         try {
             pm.makePersistent(cfg);
@@ -246,9 +246,12 @@ public class Storage {
             // TODO: only need to write if something changed, for chrome nothing
             // changes, we just create a new channel
             pm.makePersistent(device);
-            log.log(Level.INFO, "Registered device " + reqInfo.userName + " " +
-                    deviceType + "(gcm: " + isGcm + ")");
 
+            // Log only non-GCM devices - to track c2dm is still working
+            if (!isGcm) {
+                log.log(Level.INFO, "Registered device " + reqInfo.userName + " " +
+                        deviceType + "(gcm: " + isGcm + ")");
+            }
             return device;
          } finally {
             pm.close();

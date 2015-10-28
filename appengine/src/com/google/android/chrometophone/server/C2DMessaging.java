@@ -95,7 +95,7 @@ public class C2DMessaging {
         String authToken = storage.getConfig().getLegacyClientLogin();
         if (authToken == null) {
             log.warning("Unauthorized - missing ClientLogin token");
-            return false;
+            return true; // Ignore legacy if failing
         }
         conn.setRequestProperty("Authorization", "GoogleLogin auth=" + authToken);
 
@@ -112,10 +112,10 @@ public class C2DMessaging {
             // is updating the token, or Update-Client-Auth was received by another server,
             // and next retry will get the good one from database.
             log.warning("Unauthorized - need token");
-            Config cfg = storage.getConfig();
+            C2PConfig cfg = storage.getConfig();
             cfg.setLegacyClientLogin(null);
             storage.saveConfig(cfg);
-            return false;
+            return true; // Ignore legacy if failing
         }
 
         // Check for updated token header
@@ -123,7 +123,7 @@ public class C2DMessaging {
         if (updatedAuthToken != null && !authToken.equals(updatedAuthToken)) {
             log.info("Got updated auth token from datamessaging servers: " +
                     updatedAuthToken);
-            Config cfg = storage.getConfig();
+            C2PConfig cfg = storage.getConfig();
             cfg.setLegacyClientLogin(updatedAuthToken);
             storage.saveConfig(cfg);
         }
