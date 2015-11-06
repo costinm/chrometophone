@@ -26,12 +26,10 @@ window.onload = function() {
         url: chrome.extension.getURL('help.html?popupSignin=1')
       });
     });
-  }
+  }   
 
   document.querySelector("#help").onclick = function() {
-    chrome.tabs.create({
-      url: 'help.html'
-    });
+    chrome.tabs.create({url: 'help.html'});
   };
 
   document.querySelector("#close").onclick = function() {
@@ -41,22 +39,18 @@ window.onload = function() {
 
 function sendToPhoneListener(status, responseText) {
   if (status == STATUS_SUCCESS) {
-    document.getElementById('msg').textContent = chrome.i18n.getMessage(
-      'sent_message');
-    activateSignOutLink();
+    document.getElementById('msg').textContent = chrome.i18n.getMessage('sent_message');
+    activateSignOutLink();  
   } else if (status == STATUS_LOGIN_REQUIRED) {
     activateSignInLink(function() {
-      chrome.tabs.create({
-        url: 'help.html?fromPopup=1'
-      }); // token revoked
+      chrome.tabs.create({url: 'help.html?fromPopup=1'}); // token revoked
     });
   } else if (status == STATUS_DEVICE_NOT_REGISTERED) {
-    document.getElementById('msg').textContent = chrome.i18n.getMessage(
-      'device_not_registered_message');
+    document.getElementById('msg').textContent = chrome.i18n.getMessage('device_not_registered_message');
     activateSignOutLink();
-  } else {
-    document.getElementById('msg').textContent =
-      chrome.i18n.getMessage('error_sending_message', responseText);
+  } else { 
+    document.getElementById('msg').textContent =  
+        chrome.i18n.getMessage('error_sending_message', responseText);
     activateSignOutLink();
   }
 }
@@ -85,17 +79,7 @@ function activateSignOutLink() {
   signOutLink.textContent = chrome.i18n.getMessage('sign_out_message');
   signOutLink.style.color = 'blue';
   signOutLink.onclick = function() {
-    // Reuse the sendToPhone function
-    send(baseUrl + "/unregister", "",
-      "https://chrometophone.appspot.com/unregister",
-      "UNREGISTER", "",
-      function(status, responseText) {
-        console.log("Signout " + status + " " + responseText);
-        if (status == 200) {
-          localStorage.removeItem("token")
-        }
-      })
-
+    logout();
     window.close();
   }
 }
@@ -114,7 +98,8 @@ function activateSignInLink(onclick) {
   parent.appendChild(document.createTextNode(msg.substring(0, linkIndex)));
   parent.appendChild(link);
   parent.appendChild(
-    document.createTextNode(msg.substring(linkIndex + linkToken.length)));
-
+      document.createTextNode(msg.substring(linkIndex + linkToken.length)));
+  
   setSignOutVisibility(false);
 }
+

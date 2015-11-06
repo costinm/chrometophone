@@ -1,5 +1,5 @@
 {
-  "update_url": "http://clients2.google.com/service/update2/crx",
+  "update_url":"http://clients2.google.com/service/update2/crx",
   "manifest_version": 2,
   "name": "__MSG_app_name__",
   "description": "__MSG_app_desc__",

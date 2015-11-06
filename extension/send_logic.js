@@ -24,9 +24,9 @@ if (baseUrl == undefined) {
   // there is a cert validation issue (cert is for *.appspot.com ),
   // workaround is to open the URL in the browser and accept the cert
   // warnings.
-  //baseUrl = "https://chrometophone.appspot.com";
+  baseUrl = "https://chrometophone.appspot.com";
   //baseUrl = "https://datamessaging.appspot.com";
-  baseUrl = "http://localhost:8080";
+  //baseUrl = "http://localhost:8080";
 }
 
 var STATUS_SUCCESS = 'success';
@@ -94,4 +94,19 @@ function send(serverUrl, params, listener) {
     }
   }
   xhr.send(data);
+}
+
+function logout() {
+    // Reuse the sendToPhone function
+    send(baseUrl + "/unregister",
+    {
+      "url":"https://chrometophone.appspot.com/unregister",
+      "msgType": "UNREGISTER"},
+      function(status, responseText) {
+        // TODO: only if status=200 ?
+        console.log("Signout " + status + " " + responseText);
+        localStorage.removeItem("token");
+      })
+
+
 }

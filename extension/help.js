@@ -48,15 +48,15 @@ function handleLoginToken() {
 document.addEventListener("DOMContentLoaded", function() {
   // localize easy stuff
   Array.prototype.forEach.call(document.querySelectorAll("*[i18n-message]"),
-    function(node) {
-      node.textContent = chrome.i18n.getMessage(node.getAttribute(
-        'i18n-message'));
-    });
+                               function(node) {
+    node.textContent = chrome.i18n.getMessage(node.getAttribute('i18n-message'));
+  });
 
   // localize tos link
   document.querySelector('#gallery_tos_link').href =
-    'http://chrome.google.com/extensions/intl/' +
-    navigator.language.substring(0, 2) + '/gallery_tos.html';
+      'http://chrome.google.com/extensions/intl/' +
+      navigator.language.substring(0, 2) + '/gallery_tos.html';
+  
 
   handleLoginToken();
 
@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", function() {
     link.onclick = function() {
       //oauth.clearTokens();
       // TODO: unregister with the server !!
-      localStorage.removeItem("token");
+      logout();
     };
     link.text = chrome.i18n.getMessage('sign_out_message');
     document.querySelector('#sign_in_out_div').appendChild(link);
