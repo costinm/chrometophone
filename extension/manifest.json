@@ -3,7 +3,7 @@
   "manifest_version": 2,
   "name": "__MSG_app_name__",
   "description": "__MSG_app_desc__",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "default_locale": "en",
   "icons": {
     "16": "icon_16.png",
