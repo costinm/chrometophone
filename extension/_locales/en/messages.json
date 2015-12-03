@@ -1,6 +1,6 @@
 {
   "app_name": {
-    "message": "Google Chrome to Phone Extension",
+    "message": "Google Chrome to Phone Extension [DEPRECATED]",
     "description": "Name of the application"
   },
   "app_name_short": {
@@ -8,7 +8,7 @@
     "description": "Short name of the application"
   },
   "app_desc": {
-    "message": "Google Chrome to Phone Extension enables you to send links and other information from Chrome to your Android device.",
+    "message": "Notice: Google Chrome to Phone Extension is no longer supported.",
     "description": "Description of the application."
   },
   "sending_message": {
