@@ -34,7 +34,12 @@ window.onload = function() {
 
   document.querySelector("#close").onclick = function() {
     window.close();
+  
   }
+
+  document.querySelector("#deprecated").onclick = function() {
+    chrome.tabs.create({url: 'deprecated.html'});
+  };
 }
 
 function sendToPhoneListener(status, responseText) {
